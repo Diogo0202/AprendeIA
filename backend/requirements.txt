@@ -1,5 +1,9 @@
-fastapi==0.115.6
-uvicorn[standard]==0.34.0
-pydantic==2.10.5
-openai>=1.0.0
-python-dotenv>=1.0.1
+# API HTTP e servidor de desenvolvimento/produção.
+fastapi==0.141.1
+uvicorn[standard]==0.52.4
+pydantic==2.13.5
+
+# Integrações externas e configuração local.
+openai==3.8.0
+python-dotenv==1.2.3
+supabase==2.31.0

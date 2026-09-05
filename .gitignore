@@ -1,4 +1,11 @@
+# Segredos e ambientes Python nunca devem entrar no histórico do Git.
 backend/.env
 backend/.venv/
+backend/__pycache__/
+
+# Configuração local, dependências e artefatos compilados do React são recriados.
+frontend/.env
+frontend/.env.local
 frontend/node_modules/
 frontend/dist/
+frontend/*.tsbuildinfo
