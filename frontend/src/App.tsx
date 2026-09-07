@@ -1,5 +1,5 @@
 import { FormEvent, useEffect, useState } from "react";
-import { accessToken, isSupabaseConfigured, supabase } from "./lib/supabase";
+import { accessToken, apiUrl, isSupabaseConfigured, supabase } from "./lib/supabase";
 
 // As visualizações funcionam como uma navegação leve para este protótipo.
 type View = "login" | "signup" | "student" | "teacher" | "admin" | "practice";
@@ -21,8 +21,6 @@ const initialProfile: UserProfile = {
   goal: "Reforçar meus estudos",
   role: "student",
 };
-const apiUrl = import.meta.env.VITE_API_URL || "http://localhost:8000";
-
 /** Anexa o JWT atual às chamadas que precisam ser validadas pelo FastAPI. */
 async function apiFetch(path: string, init: RequestInit = {}) {
   const token = await accessToken();
@@ -158,7 +156,10 @@ export default function App() {
     setAuthMessage("");
     setAuthLoading(true);
     if (!supabase) {
-      enter(String(data.get("role")) as Role);
+      // A demonstração local fica somente como estudante; cargos reais exigem
+      // sessão do Supabase e são definidos pelo perfil carregado no backend.
+      setProfile(initialProfile);
+      enter("student");
       setAuthLoading(false);
       return;
     }
@@ -233,11 +234,24 @@ export default function App() {
       />
     );
   if (view === "practice")
+    if (profile.role !== "student")
+      return <AccessDenied onLogout={logout} />;
+  if (view === "practice")
     return (
       <PracticeProfile onBack={() => setView("student")} onLogout={logout} />
     );
-  if (view === "teacher") return <TeacherProfile onLogout={logout} />;
-  if (view === "admin") return <AdminProfile onLogout={logout} />;
+  if (view === "teacher")
+    return profile.role === "teacher" ? (
+      <TeacherProfile onLogout={logout} />
+    ) : (
+      <AccessDenied onLogout={logout} />
+    );
+  if (view === "admin")
+    return profile.role === "admin" ? (
+      <AdminProfile onLogout={logout} />
+    ) : (
+      <AccessDenied onLogout={logout} />
+    );
   return (
     <main className="page-shell">
       <section className="auth-card">
@@ -257,6 +271,22 @@ export default function App() {
             loading={authLoading}
           />
         )}
+      </section>
+    </main>
+  );
+}
+
+/** Evita que uma navegação manipulada no cliente revele a área de outro cargo. */
+function AccessDenied({ onLogout }: { onLogout: () => void }) {
+  return (
+    <main className="profile-page">
+      <Header area="ACESSO RESTRITO" onLogout={onLogout} />
+      <section className="profile-content narrow">
+        <p className="eyebrow">PERMISSÃO NECESSÁRIA</p>
+        <h1>Essa área não está disponível para seu perfil.</h1>
+        <p className="subtitle">
+          Sua sessão continua protegida. Saia e entre com uma conta autorizada.
+        </p>
       </section>
     </main>
   );
@@ -342,16 +372,6 @@ function Login({
             </button>
           </div>
         </label>
-        {!isSupabaseConfigured && (
-          <label>
-            PERFIL DE DEMONSTRAÇÃO
-            <select name="role" defaultValue="student">
-              <option value="student">Estudante</option>
-              <option value="teacher">Professor</option>
-              <option value="admin">Administradora</option>
-            </select>
-          </label>
-        )}
         <div className="form-row">
           <label className="check">
             <input type="checkbox" />
