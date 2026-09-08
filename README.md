@@ -1,60 +1,61 @@
-# AprendeIA
+# 🎓 AprendeIA
 
-Protótipo de uma plataforma de reforço escolar com aprendizagem adaptativa e geração de questões por inteligência artificial.
+> Aprender no seu ritmo, praticar de verdade e transformar dificuldades em próximos passos. ✨
 
-## Tecnologias
+O **AprendeIA** é um protótipo de plataforma de reforço escolar que combina React, Python e inteligência artificial para criar uma experiência de estudo mais adaptativa. Aqui, cada resposta ajuda o sistema a entender o momento do aluno e sugerir o próximo desafio. 🧠
 
-- Frontend: React, TypeScript e Vite
-- Backend: Python e FastAPI
-- Inteligência artificial: OpenAI Responses API
-- Autenticação e persistência: Supabase Auth e PostgreSQL
+## 🌱 O que a plataforma faz
 
-## Funcionalidades atuais
+- 🔐 Login por e-mail e senha com Supabase Auth.
+- 👩‍🎓 Perfil do estudante com matérias, progresso, aulas restantes e dificuldades.
+- 🧩 Questões geradas por IA com níveis básico, intermediário e avançado.
+- 💡 Correção com explicações para transformar erro em aprendizado.
+- 👨‍🏫 Painel do professor para acompanhar estudantes vinculados, sem alterar seus dados.
+- 🛠️ Área administrativa para cadastrar estudantes e professores.
+- 📈 Ajuste de dificuldade conforme os acertos do aluno.
+- 🛡️ Regras de segurança que impedem acesso a dados de outros usuários.
 
-- Login real por e-mail e senha com sessão persistida pelo Supabase Auth.
-- Autorização por cargo (`student`, `teacher` e `admin`) definida no banco, sem seleção de cargo no login.
-- Perfil do estudante com matérias, progresso, aulas restantes e dificuldades.
-- Área de prática com questões, correção e explicações.
-- Perfil do professor com acompanhamento demonstrativo por estudante.
-- Perfil da administradora com inclusão segura de estudantes e professores pelo backend.
-- API para gerar, listar, selecionar e corrigir questões.
-- Persistência de matérias, módulos, aulas, progresso, questões, tentativas e dificuldades.
-- Ajuste do nível entre básico, intermediário e avançado conforme os acertos.
-- Políticas RLS que limitam cada usuário aos dados permitidos para seu cargo.
+## 🧰 Tecnologias
 
-## Estrutura
+| Parte do projeto | Ferramentas |
+| --- | --- |
+| 🎨 Interface | React, TypeScript e Vite |
+| ⚙️ API | Python e FastAPI |
+| 🤖 IA | OpenAI Responses API |
+| 🗃️ Dados e login | Supabase Auth e PostgreSQL |
+| 🚂 Publicação | Railway |
+
+## 🗺️ Organização do projeto
 
 ```text
 AprendeIA/
-├── backend/
+├── backend/                 # API, autenticação e regras do sistema
+│   ├── Dockerfile
 │   ├── .env.example
 │   ├── main.py
 │   └── requirements.txt
-├── frontend/
+├── frontend/                # Telas e experiência de estudo
+│   ├── docker-entrypoint.d/
 │   ├── src/
-│   ├── .env.example
-│   ├── index.html
-│   ├── package.json
-│   ├── package-lock.json
-│   ├── tsconfig.json
-│   └── vite.config.ts
-├── docs/
-│   └── ARQUITETURA.md
-├── supabase/
-│   └── migrations/
-├── .gitignore
+│   ├── Dockerfile
+│   ├── nginx.conf
+│   └── package.json
+├── docs/                    # Decisões e arquitetura
+├── supabase/migrations/     # Estrutura e permissões do banco
 └── README.md
 ```
 
-## Como o código está explicado
+## 💬 Código comentado
 
-Os arquivos têm comentários curtos sobre as partes que realmente importam: autenticação, permissões, fluxo das telas e adaptação das questões. A visão geral e o motivo das principais escolhas ficam em [`docs/ARQUITETURA.md`](docs/ARQUITETURA.md).
+Os comentários explicam as escolhas que realmente importam: login, permissões, fluxo das telas e adaptação das questões. Para entender o panorama do projeto, veja [docs/ARQUITETURA.md](docs/ARQUITETURA.md).
 
-Arquivos gerados, como `package-lock.json`, não recebem comentários porque isso quebraria o formato. As dependências ficam com versões fixas para o projeto rodar do mesmo jeito em outras máquinas.
+Arquivos gerados automaticamente, como `package-lock.json`, ficam sem comentários para não quebrar seu formato. As versões das dependências continuam fixas para o projeto se comportar igual em outras máquinas.
 
-## Executar o frontend
+## 🚀 Rodando o projeto localmente
 
-Requer Node.js compatível com a versão registrada no `package-lock.json`.
+### 🎨 Frontend
+
+É necessário usar uma versão do Node.js compatível com o `package-lock.json`.
 
 ```bash
 cd frontend
@@ -62,7 +63,7 @@ npm ci
 npm run dev
 ```
 
-Copie `frontend/.env.example` para `frontend/.env.local` e preencha os dados exibidos no painel **Connect** do Supabase:
+Crie `frontend/.env.local` a partir de `frontend/.env.example`:
 
 ```env
 VITE_SUPABASE_URL=https://seu-projeto.supabase.co
@@ -70,17 +71,15 @@ VITE_SUPABASE_PUBLISHABLE_KEY=sb_publishable_...
 VITE_API_URL=http://localhost:8000
 ```
 
-A chave publicável pode ficar no navegador; sua segurança depende das políticas RLS. Nunca use a chave secreta no frontend.
-
-A interface ficará disponível em `http://localhost:5173`.
-
-Para gerar o build de produção:
+Depois, abra `http://localhost:5173`. Para gerar uma versão de produção:
 
 ```bash
 npm run build
 ```
 
-## Executar o backend
+> A chave publicável do Supabase pode existir no navegador. A chave secreta nunca deve sair do backend. 🔒
+
+### ⚙️ Backend
 
 Requer Python 3.10 ou superior.
 
@@ -97,7 +96,7 @@ python -m pip install -r requirements.txt
 python -m uvicorn main:app --reload
 ```
 
-Copie `backend/.env.example` para `backend/.env` e configure localmente:
+Crie `backend/.env` a partir de `backend/.env.example`:
 
 ```env
 OPENAI_API_KEY=sua_chave_local
@@ -107,25 +106,37 @@ SUPABASE_SECRET_KEY=sb_secret_...
 FRONTEND_URL=http://localhost:5173
 ```
 
-Nunca publique o arquivo `.env` ou uma chave real. A documentação interativa fica desativada para não expor a superfície da API.
+> Nunca envie `.env` ou uma chave real para o GitHub. A documentação interativa da API fica desativada em produção para reduzir a superfície exposta. 🛡️
 
-## Endpoints principais
+## 🔐 Papéis e limites de acesso
 
-| Método | Endpoint | Finalidade |
+| Perfil | Pode fazer | Não pode fazer |
 | --- | --- | --- |
-| `GET` | `/health` | Verifica backend, IA e Supabase |
-| `GET` | `/question-bank` | Lista questões persistidas |
-| `POST` | `/question-bank/generate` | Gera uma questão com a OpenAI |
-| `GET` | `/question-bank/next` | Seleciona a próxima questão |
-| `POST` | `/question-bank/{question_id}/answer` | Corrige e atualiza o desempenho |
-| `GET` | `/student/subjects` | Retorna as matérias do estudante |
-| `GET` | `/teacher/students` | Retorna os estudantes vinculados ao professor |
+| 👩‍🎓 Estudante | Ver o próprio progresso, aulas e questões | Acessar dados de outro aluno ou área administrativa |
+| 👨‍🏫 Professor | Consultar estudantes vinculados | Alterar perfil, progresso ou dificuldades de estudantes |
+| 🛠️ Administração | Cadastrar estudantes e professores | Usar dados sem passar pelas regras da API |
+
+As regras são verificadas na API e também no banco com políticas RLS. Assim, trocar um ID na URL não libera dados de outra pessoa. ✋
+
+## 🧪 Endpoints principais
+
+| Método | Endpoint | Para que serve |
+| --- | --- | --- |
+| `GET` | `/health` | Verifica se a API está disponível para um usuário autenticado |
+| `GET` | `/question-bank` | Lista questões permitidas ao usuário |
+| `POST` | `/question-bank/generate` | Gera uma questão para professor ou administração |
+| `GET` | `/question-bank/next` | Escolhe a próxima questão do estudante |
+| `POST` | `/question-bank/{question_id}/answer` | Corrige uma resposta e atualiza o desempenho |
+| `GET` | `/student/subjects` | Mostra as matérias do próprio estudante |
+| `GET` | `/teacher/students` | Mostra estudantes vinculados ao professor |
 | `POST` | `/admin/users` | Cria estudantes ou professores |
 
-## Preparar o Supabase
+## 🗃️ Preparando o Supabase
 
 1. Crie um projeto no Supabase.
-2. Execute, nesta ordem, os arquivos `supabase/migrations/20260905192035_initial_learning_schema.sql` e `supabase/migrations/20260906120000_harden_authorization.sql` no SQL Editor ou aplique-os com a CLI.
+2. Execute, nesta ordem, as migrations:
+   - `supabase/migrations/20260905192035_initial_learning_schema.sql`
+   - `supabase/migrations/20260906120000_harden_authorization.sql`
 3. Crie sua primeira conta pela interface.
 4. No SQL Editor, promova somente essa conta inicial:
 
@@ -135,23 +146,26 @@ set role = 'admin'
 where email = 'seu-email@exemplo.com';
 ```
 
-5. Saia e entre novamente. A administradora poderá criar as demais contas.
+5. Saia e entre novamente. Pronto: a conta administrativa poderá cadastrar os demais perfis. 🎉
 
-## Estado do protótipo
+## 🚂 Publicando no Railway
 
-Sem variáveis do Supabase, o projeto não libera endpoints protegidos nem cargos administrativos; a tela local serve apenas para visualizar o perfil de estudante. Com as variáveis configuradas, autenticação e dados passam a usar o Supabase; cada rota valida o token no backend e o cargo vem do perfil persistido.
+Crie dois serviços usando este mesmo repositório:
 
-Ainda são necessários limites de uso da API, recuperação de senha, testes completos das políticas RLS e validação pedagógica das questões antes de uma implantação real.
-
-Questões geradas por IA devem passar por validação pedagógica antes do uso com estudantes reais.
-
-## Deploy no Railway
-
-Crie dois serviços a partir deste mesmo repositório, cada um com sua própria pasta raiz:
-
-| Serviço | Pasta raiz | Variáveis necessárias |
+| Serviço | Pasta raiz | Variáveis no Railway |
 | --- | --- | --- |
-| API | `/backend` | `OPENAI_API_KEY`, `OPENAI_MODEL`, `SUPABASE_URL`, `SUPABASE_SECRET_KEY`, `FRONTEND_URL` |
-| Interface | `/frontend` | `VITE_SUPABASE_URL`, `VITE_SUPABASE_PUBLISHABLE_KEY`, `VITE_API_URL` |
+| ⚙️ API | `/backend` | `OPENAI_API_KEY`, `OPENAI_MODEL`, `SUPABASE_URL`, `SUPABASE_SECRET_KEY`, `FRONTEND_URL` |
+| 🎨 Interface | `/frontend` | `VITE_SUPABASE_URL`, `VITE_SUPABASE_PUBLISHABLE_KEY`, `VITE_API_URL` |
 
-Os `Dockerfile`s das duas pastas definem o build e a porta de cada serviço. A interface gera `runtime-config.js` na inicialização; portanto, apenas dados publicáveis podem ser usados nas variáveis `VITE_*`. Depois de gerar o domínio da interface, use-o como valor de `FRONTEND_URL` na API para manter o CORS fechado.
+Os `Dockerfile`s já definem como cada serviço é construído. O frontend monta um `runtime-config.js` quando inicia, então as variáveis `VITE_*` podem ser configuradas no painel do Railway sem entrar no Git.
+
+Quando o Railway gerar a URL da interface, copie-a para `FRONTEND_URL` na API. Isso mantém o CORS fechado apenas para o site do AprendeIA. ✅
+
+## 🌟 Próximos passos
+
+- Validar as questões com professores antes de usá-las com estudantes reais.
+- Criar recuperação de senha e limites de uso da API.
+- Fazer testes completos de RLS com contas de cada perfil.
+- Adicionar monitoramento de erros e disponibilidade após o deploy.
+
+Feito por um estudante para ajudar outros estudantes a aprender com mais clareza, prática e autonomia. 📚🤖
