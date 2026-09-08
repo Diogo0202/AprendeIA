@@ -8,6 +8,7 @@ O **AprendeIA** é um protótipo de plataforma de reforço escolar que combina R
 
 - 🔐 Login por e-mail e senha com Supabase Auth.
 - 👩‍🎓 Perfil do estudante com matérias, progresso, aulas restantes e dificuldades.
+- 🏆 Jornada gamificada com XP, níveis, sequência de estudos e insígnias por consistência e acertos.
 - 🧩 Questões geradas por IA com níveis básico, intermediário e avançado.
 - 💡 Correção com explicações para transformar erro em aprendizado.
 - 👨‍🏫 Painel do professor para acompanhar estudantes vinculados, sem alterar seus dados.
@@ -51,7 +52,7 @@ AprendeIA/
 
 Os comentários explicam as escolhas que realmente importam: login, permissões, fluxo das telas e adaptação das questões. Para entender o panorama do projeto, veja [docs/ARQUITETURA.md](docs/ARQUITETURA.md).
 
-Para usar modelos locais e dividir tarefas entre IAs, consulte o [guia de modelos Ollama](docs/OLLAMA_MODELOS.md). 🤖
+Para usar modelos locais e dividir tarefas entre IAs, consulte o [guia de modelos Ollama](docs/OLLAMA_MODELOS.md). 🤖 A regra de XP, níveis e insígnias está explicada em [docs/GAMIFICACAO.md](docs/GAMIFICACAO.md).
 
 Arquivos gerados automaticamente, como `package-lock.json`, ficam sem comentários para não quebrar seu formato. As versões das dependências continuam fixas para o projeto se comportar igual em outras máquinas.
 
@@ -139,6 +140,7 @@ As regras são verificadas na API e também no banco com políticas RLS. Assim, 
 | `GET` | `/question-bank/next` | Escolhe a próxima questão do estudante |
 | `POST` | `/question-bank/{question_id}/answer` | Corrige uma resposta e atualiza o desempenho |
 | `GET` | `/student/subjects` | Mostra as matérias do próprio estudante |
+| `GET` | `/student/gamification` | Mostra o XP, nível, sequência e conquistas do próprio estudante |
 | `GET` | `/teacher/students` | Mostra estudantes vinculados ao professor |
 | `GET` | `/teacher/difficulty-alerts` | Mostra alertas ativos da disciplina do professor |
 | `POST` | `/admin/users` | Cria estudantes ou professores |
@@ -151,6 +153,7 @@ As regras são verificadas na API e também no banco com políticas RLS. Assim, 
    - `supabase/migrations/20260905192035_initial_learning_schema.sql`
    - `supabase/migrations/20260906120000_harden_authorization.sql`
    - `supabase/migrations/20260908150000_teacher_subject_alerts.sql`
+   - `supabase/migrations/20260908170000_student_gamification.sql`
 3. Crie sua primeira conta pela interface.
 4. No SQL Editor, promova somente essa conta inicial:
 

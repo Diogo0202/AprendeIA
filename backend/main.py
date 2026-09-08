@@ -15,6 +15,7 @@ from collections import defaultdict
 from datetime import date, datetime, timedelta, timezone
 from email.message import EmailMessage
 from typing import Annotated, Any
+from zoneinfo import ZoneInfo
 
 from dotenv import load_dotenv
 from fastapi import Depends, FastAPI, Header, HTTPException
@@ -30,6 +31,7 @@ from difficulty_alerts import (
     is_high_difficulty,
     is_valid_cron_secret,
 )
+from gamification import build_gamification_summary, calculate_current_streak
 
 # Carrega somente variáveis locais; o arquivo .env fica fora do Git.
 load_dotenv()
@@ -524,6 +526,53 @@ def student_subjects(user: dict = Depends(require_role("student"))):
     if not supabase_configured():
         return [{"name": "Matemática", "completed_lessons": 5, "total_lessons": 8, "difficulty": "Alta"}]
     return database().table("enrollments").select("subject_id,subjects(id,name,modules(id,title,lessons(id)))").eq("student_id", user["id"]).execute().data
+
+
+@app.get("/student/gamification")
+def student_gamification(user: dict = Depends(require_role("student"))):
+    """Calcula a jornada usando apenas a atividade do estudante autenticado."""
+
+    if not supabase_configured():
+        return build_gamification_summary(
+            completed_lessons=2,
+            correct_answers=12,
+            attempts=15,
+            active_days=4,
+            current_streak=3,
+        )
+    db = database()
+    completed_response = (
+        db.table("lesson_progress")
+        .select("lesson_id", count="exact")
+        .eq("student_id", user["id"])
+        .eq("completed", True)
+        .execute()
+    )
+    attempts = (
+        db.table("question_attempts")
+        .select("correct")
+        .eq("student_id", user["id"])
+        .limit(10000)
+        .execute()
+        .data
+    )
+    activity_rows = (
+        db.table("student_activity_days")
+        .select("activity_date")
+        .eq("student_id", user["id"])
+        .order("activity_date", desc=True)
+        .limit(365)
+        .execute()
+        .data
+    )
+    activity_days = [date.fromisoformat(str(row["activity_date"])) for row in activity_rows]
+    return build_gamification_summary(
+        completed_lessons=completed_response.count or 0,
+        correct_answers=sum(1 for attempt in attempts if attempt["correct"]),
+        attempts=len(attempts),
+        active_days=len(activity_days),
+        current_streak=calculate_current_streak(activity_days, today=datetime.now(ZoneInfo("America/Sao_Paulo")).date()),
+    )
 
 
 @app.get("/teacher/students")

@@ -70,6 +70,16 @@ class SecurityBoundaryTests(unittest.TestCase):
         self.assertNotIn("correct_index", public_question)
         self.assertNotIn("explanation", public_question)
 
+    def test_gamification_endpoint_exists_as_a_student_only_route(self):
+        """O perfil não pode buscar pontos de outro estudante trocando um ID."""
+        paths = {route.path for route in app.routes}
+
+        self.assertIn("/student/gamification", paths)
+        with self.assertRaises(HTTPException) as error:
+            require_role("student")({"role": "teacher"})
+
+        self.assertEqual(error.exception.status_code, 403)
+
 
 if __name__ == "__main__":
     unittest.main()

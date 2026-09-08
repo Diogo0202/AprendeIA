@@ -1,4 +1,4 @@
-import { FormEvent, useEffect, useState } from "react";
+import { CSSProperties, FormEvent, useEffect, useState } from "react";
 import { accessToken, apiUrl, isSupabaseConfigured, supabase } from "./lib/supabase";
 
 // As visualizações funcionam como uma navegação leve para este protótipo.
@@ -55,6 +55,41 @@ const subjects = [
     tone: "low",
   },
 ];
+
+type Achievement = {
+  id: string;
+  title: string;
+  description: string;
+  icon: string;
+};
+
+type GamificationSummary = {
+  points: number;
+  level: number;
+  next_level_points: number;
+  level_progress: number;
+  accuracy_percent: number;
+  active_days: number;
+  current_streak: number;
+  achievements: Achievement[];
+};
+
+// Estes dados só aparecem sem Supabase para a apresentação não esconder a jornada.
+const demoGamification: GamificationSummary = {
+  points: 400,
+  level: 2,
+  next_level_points: 500,
+  level_progress: 60,
+  accuracy_percent: 80,
+  active_days: 4,
+  current_streak: 3,
+  achievements: [
+    { id: "first_lesson", title: "Primeira aula", description: "Você começou sua jornada.", icon: "🌱" },
+    { id: "study_streak", title: "Ritmo de estudo", description: "Estudou por 3 dias seguidos.", icon: "🔥" },
+    { id: "ten_correct_answers", title: "Mira certeira", description: "Acertou 10 questões.", icon: "🎯" },
+    { id: "excellent_accuracy", title: "Mandou bem", description: "Chegou a 80% de acertos.", icon: "⭐" },
+  ],
+};
 type TeacherStudent = {
   id: string;
   full_name: string;
@@ -338,10 +373,10 @@ function Header({ onLogout, area }: { onLogout: () => void; area: string }) {
   );
 }
 
-/** Gera iniciais previsíveis quando ainda não há fotografia de perfil. */
-function Avatar({ name }: { name: string }) {
+/** Gera iniciais previsíveis enquanto o avatar ilustrado não foi escolhido. */
+function Avatar({ name, className = "" }: { name: string; className?: string }) {
   return (
-    <span className="small-avatar">
+    <span className={`small-avatar ${className}`} aria-hidden="true">
       {name
         .split(" ")
         .map((word) => word[0])
@@ -505,15 +540,92 @@ function StudentProfile({
   onLogout: () => void;
   onPractice: () => void;
 }) {
+  const [gamification, setGamification] = useState<GamificationSummary | null>(
+    isSupabaseConfigured ? null : demoGamification,
+  );
+  const [gamificationError, setGamificationError] = useState("");
+
+  // A pontuação vem da API para que o navegador nunca consiga premiar a si mesmo.
+  useEffect(() => {
+    if (!isSupabaseConfigured) return;
+    let active = true;
+    apiFetch("/student/gamification")
+      .then(async (response) => {
+        if (!response.ok) throw new Error("gamification request failed");
+        return (await response.json()) as GamificationSummary;
+      })
+      .then((summary) => {
+        if (active) setGamification(summary);
+      })
+      .catch(() => {
+        if (active)
+          setGamificationError(
+            "Não foi possível atualizar suas conquistas agora. Tente novamente mais tarde.",
+          );
+      });
+    return () => {
+      active = false;
+    };
+  }, []);
+
+  const levelStyle = gamification
+    ? ({ "--progress": gamification.level_progress } as CSSProperties &
+        Record<"--progress", number>)
+    : undefined;
+
   return (
     <main className="profile-page">
       <Header area="ÁREA DO ESTUDANTE" onLogout={onLogout} />
       <section className="profile-content">
-        <p className="eyebrow">MEU APRENDIZADO</p>
-        <h1>Olá, {profile.name.split(" ")[0]}!</h1>
-        <p className="subtitle">
-          Acompanhe suas matérias e continue de onde parou.
-        </p>
+        <section className="student-hero" aria-labelledby="student-name">
+          <div className="student-avatar-column">
+            <Avatar name={profile.name} className="student-avatar" />
+            <section className="achievement-shelf" aria-labelledby="achievements-title">
+              <h2 id="achievements-title">Conquistas</h2>
+              {gamification ? (
+                <ul className="achievement-list">
+                  {gamification.achievements.map((achievement) => (
+                    <li className="achievement-chip" key={achievement.id} title={achievement.description}>
+                      <span aria-hidden="true">{achievement.icon}</span>
+                      <span>{achievement.title}</span>
+                    </li>
+                  ))}
+                </ul>
+              ) : (
+                <p className="achievement-empty">Suas conquistas aparecerão por aqui.</p>
+              )}
+            </section>
+          </div>
+          <div className="student-intro">
+            <p className="eyebrow">MINHA JORNADA</p>
+            <h1 id="student-name">Olá, {profile.name.split(" ")[0]}!</h1>
+            <p className="subtitle">
+              Cada aula e cada resposta ajudam a construir o seu caminho.
+            </p>
+            {gamification && (
+              <dl className="journey-stats" aria-label="Resumo da jornada">
+                <div><dt>Sequência</dt><dd>{gamification.current_streak} dias</dd></div>
+                <div><dt>Acertos</dt><dd>{gamification.accuracy_percent}%</dd></div>
+                <div><dt>Dias ativos</dt><dd>{gamification.active_days}</dd></div>
+              </dl>
+            )}
+          </div>
+          <section className="level-card" aria-label="Seu nível atual">
+            {gamification ? (
+              <>
+                <div className="level-ring" style={levelStyle}>
+                  <progress value={gamification.level_progress} max="100" aria-label={`${gamification.level_progress}% do caminho para o próximo nível`} />
+                  <span><strong>{gamification.level}</strong>Nível</span>
+                </div>
+                <p><strong>{gamification.points} XP</strong> de {gamification.next_level_points} XP</p>
+                <small>Continue estudando para subir de nível.</small>
+              </>
+            ) : (
+              <p>Preparando sua jornada...</p>
+            )}
+          </section>
+        </section>
+        {gamificationError && <p className="gamification-message" role="status">{gamificationError}</p>}
         <button className="primary-button practice-button" onClick={onPractice}>
           Praticar questões com IA
         </button>
