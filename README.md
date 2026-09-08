@@ -11,6 +11,8 @@ O **AprendeIA** é um protótipo de plataforma de reforço escolar que combina R
 - 🧩 Questões geradas por IA com níveis básico, intermediário e avançado.
 - 💡 Correção com explicações para transformar erro em aprendizado.
 - 👨‍🏫 Painel do professor para acompanhar estudantes vinculados, sem alterar seus dados.
+- 📬 Alertas de dificuldade por disciplina no painel e por e-mail para o professor responsável.
+- 🗓️ Resumo semanal dos alertas ativos, protegido por um segredo interno.
 - 🛠️ Área administrativa para cadastrar estudantes e professores.
 - 📈 Ajuste de dificuldade conforme os acertos do aluno.
 - 🛡️ Regras de segurança que impedem acesso a dados de outros usuários.
@@ -106,6 +108,13 @@ OPENAI_MODEL=gpt-5-mini
 SUPABASE_URL=https://seu-projeto.supabase.co
 SUPABASE_SECRET_KEY=sb_secret_...
 FRONTEND_URL=http://localhost:5173
+SMTP_HOST=smtp.seu-provedor.com
+SMTP_PORT=465
+SMTP_USERNAME=
+SMTP_PASSWORD=
+SMTP_FROM=aprendeia@escola.com
+SMTP_USE_SSL=true
+WEEKLY_SUMMARY_CRON_SECRET=gere_um_valor_longo_e_aleatorio
 ```
 
 > Nunca envie `.env` ou uma chave real para o GitHub. A documentação interativa da API fica desativada em produção para reduzir a superfície exposta. 🛡️
@@ -115,8 +124,8 @@ FRONTEND_URL=http://localhost:5173
 | Perfil | Pode fazer | Não pode fazer |
 | --- | --- | --- |
 | 👩‍🎓 Estudante | Ver o próprio progresso, aulas e questões | Acessar dados de outro aluno ou área administrativa |
-| 👨‍🏫 Professor | Consultar estudantes vinculados | Alterar perfil, progresso ou dificuldades de estudantes |
-| 🛠️ Administração | Cadastrar estudantes e professores | Usar dados sem passar pelas regras da API |
+| 👨‍🏫 Professor | Consultar estudantes e alertas da própria disciplina | Alterar perfil, progresso ou dificuldades de estudantes; ver outra matéria |
+| 🛠️ Administração | Cadastrar estudantes e professores, atribuindo a disciplina do professor | Consultar dados pedagógicos ou entrar no modo de professor |
 
 As regras são verificadas na API e também no banco com políticas RLS. Assim, trocar um ID na URL não libera dados de outra pessoa. ✋
 
@@ -131,7 +140,9 @@ As regras são verificadas na API e também no banco com políticas RLS. Assim, 
 | `POST` | `/question-bank/{question_id}/answer` | Corrige uma resposta e atualiza o desempenho |
 | `GET` | `/student/subjects` | Mostra as matérias do próprio estudante |
 | `GET` | `/teacher/students` | Mostra estudantes vinculados ao professor |
+| `GET` | `/teacher/difficulty-alerts` | Mostra alertas ativos da disciplina do professor |
 | `POST` | `/admin/users` | Cria estudantes ou professores |
+| `POST` | `/internal/weekly-difficulty-summary` | Envia resumo semanal; exige `X-Cron-Secret` |
 
 ## 🗃️ Preparando o Supabase
 
@@ -139,6 +150,7 @@ As regras são verificadas na API e também no banco com políticas RLS. Assim, 
 2. Execute, nesta ordem, as migrations:
    - `supabase/migrations/20260905192035_initial_learning_schema.sql`
    - `supabase/migrations/20260906120000_harden_authorization.sql`
+   - `supabase/migrations/20260908150000_teacher_subject_alerts.sql`
 3. Crie sua primeira conta pela interface.
 4. No SQL Editor, promova somente essa conta inicial:
 
@@ -156,12 +168,14 @@ Crie dois serviços usando este mesmo repositório:
 
 | Serviço | Pasta raiz | Variáveis no Railway |
 | --- | --- | --- |
-| ⚙️ API | `/backend` | `OPENAI_API_KEY`, `OPENAI_MODEL`, `SUPABASE_URL`, `SUPABASE_SECRET_KEY`, `FRONTEND_URL` |
+| ⚙️ API | `/backend` | `OPENAI_API_KEY`, `OPENAI_MODEL`, `SUPABASE_URL`, `SUPABASE_SECRET_KEY`, `FRONTEND_URL`, variáveis SMTP e `WEEKLY_SUMMARY_CRON_SECRET` |
 | 🎨 Interface | `/frontend` | `VITE_SUPABASE_URL`, `VITE_SUPABASE_PUBLISHABLE_KEY`, `VITE_API_URL` |
 
 Os `Dockerfile`s já definem como cada serviço é construído. O frontend monta um `runtime-config.js` quando inicia, então as variáveis `VITE_*` podem ser configuradas no painel do Railway sem entrar no Git.
 
 Quando o Railway gerar a URL da interface, copie-a para `FRONTEND_URL` na API. Isso mantém o CORS fechado apenas para o site do AprendeIA. ✅
+
+Para os alertas, configure o provedor SMTP no serviço da API e agende uma chamada semanal autenticada para o endpoint interno. O passo a passo e as regras de privacidade estão em [docs/ALERTAS_DIFICULDADE.md](docs/ALERTAS_DIFICULDADE.md).
 
 ## 🌟 Próximos passos
 

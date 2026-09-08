@@ -447,6 +447,47 @@ select {
   color: #67717c;
   margin-bottom: 0;
 }
+/* Alertas ficam perto da visão da turma para o professor não depender do e-mail. */
+.teacher-alerts {
+  margin: 30px 0 20px;
+}
+.teacher-alert-status,
+.empty-state,
+.field-help {
+  color: #69717d;
+  font-size: 13px;
+}
+.teacher-alert-status {
+  margin: -6px 0 14px;
+}
+.alert-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: 12px;
+  margin-bottom: 20px;
+}
+.difficulty-alert {
+  display: grid;
+  gap: 7px;
+  padding: 16px;
+  border: 1px solid #f0d4d9;
+  border-radius: 12px;
+  background: #fff;
+}
+.difficulty-alert .difficulty {
+  justify-self: start;
+}
+.difficulty-alert span:not(.difficulty),
+.difficulty-alert p {
+  margin: 0;
+  color: #69717d;
+  font-size: 13px;
+}
+.field-help {
+  letter-spacing: 0;
+  font-weight: 500;
+  line-height: 1.4;
+}
 .compact-form {
   gap: 18px;
 }

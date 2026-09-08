@@ -4,10 +4,11 @@ import unittest
 from unittest.mock import patch
 
 from fastapi import HTTPException
+from pydantic import ValidationError
 
 sys.path.insert(0, os.path.dirname(__file__))
 
-from main import QuestionRequest, app, current_user, require_role, sanitize_prompt_value
+from main import QuestionRequest, UserCreate, app, current_user, hide_question_solution, require_role, sanitize_prompt_value
 
 
 class SecurityBoundaryTests(unittest.TestCase):
@@ -44,6 +45,30 @@ class SecurityBoundaryTests(unittest.TestCase):
 
         self.assertNotIn("/docs", public_paths)
         self.assertNotIn("/openapi.json", public_paths)
+
+    def test_teacher_creation_requires_a_subject_assignment(self):
+        """A administradora não deve criar professor que enxerga uma turma sem matéria."""
+        with self.assertRaises(ValidationError):
+            UserCreate(
+                name="Prof. Carla",
+                email="carla@escola.com",
+                password="senha-segura",
+                role="teacher",
+            )
+
+    def test_student_question_payload_never_contains_the_solution_before_answering(self):
+        """O gabarito só deve sair no retorno de correção, nunca na próxima questão."""
+        public_question = hide_question_solution(
+            {
+                "id": "question-1",
+                "question": "Quanto é 1 + 1?",
+                "correct_index": 1,
+                "explanation": "Uma mais uma é igual a duas.",
+            }
+        )
+
+        self.assertNotIn("correct_index", public_question)
+        self.assertNotIn("explanation", public_question)
 
 
 if __name__ == "__main__":

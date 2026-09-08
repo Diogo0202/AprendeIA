@@ -55,30 +55,51 @@ const subjects = [
     tone: "low",
   },
 ];
-const students = [
+type TeacherStudent = {
+  id: string;
+  full_name: string;
+  grade: string;
+  subject: string;
+};
+
+type TeacherAlert = {
+  id: string;
+  student_id?: string;
+  student_name: string;
+  student_grade?: string;
+  subject: string;
+  topic: string;
+  accuracy: number;
+  attempts: number;
+  status: "active" | "resolved";
+};
+
+// O modo local continua útil para apresentar o TCC, mas não cria permissões reais.
+const demoTeacherStudents: TeacherStudent[] = [
   {
-    name: "Ana Souza",
+    id: "demo-ana",
+    full_name: "Ana Souza",
     grade: "8º ano",
     subject: "Matemática",
-    time: "2h 35min",
-    difficulty: "Alta",
-    tone: "high",
   },
   {
-    name: "Bruno Lima",
+    id: "demo-bruno",
+    full_name: "Bruno Lima",
     grade: "8º ano",
-    subject: "Português",
-    time: "1h 45min",
-    difficulty: "Média",
-    tone: "medium",
+    subject: "Matemática",
   },
+];
+const demoTeacherAlerts: TeacherAlert[] = [
   {
-    name: "Carla Reis",
-    grade: "9º ano",
-    subject: "Ciências",
-    time: "3h 10min",
-    difficulty: "Baixa",
-    tone: "low",
+    id: "demo-alert",
+    student_id: "demo-ana",
+    student_name: "Ana Souza",
+    student_grade: "8º ano",
+    subject: "Matemática",
+    topic: "Frações",
+    accuracy: 40,
+    attempts: 5,
+    status: "active",
   },
 ];
 
@@ -620,12 +641,13 @@ function PracticeProfile({
       });
       if (!response.ok) throw new Error();
       setResult(await response.json());
-    } catch {
+  } catch {
+      // Sem resposta do servidor não tentamos corrigir no navegador: o gabarito
+      // real fica só no backend para não virar dado fácil de inspecionar.
       setResult({
-        correct: selected === question.correct_index,
-        explanation: question.explanation,
-        next_difficulty:
-          selected === question.correct_index ? "intermediate" : "basic",
+        correct: false,
+        explanation: "Não foi possível corrigir agora. Tente enviar a resposta novamente.",
+        next_difficulty: "basic",
       });
     }
   }
@@ -712,7 +734,58 @@ function PracticeProfile({
 
 /** Organiza a observação dos alunos sem expor funções administrativas. */
 function TeacherProfile({ onLogout }: { onLogout: () => void }) {
-  const [selected, setSelected] = useState(students[0]);
+  const [students, setStudents] = useState<TeacherStudent[]>(demoTeacherStudents);
+  const [alerts, setAlerts] = useState<TeacherAlert[]>([]);
+  const [selectedId, setSelectedId] = useState(demoTeacherStudents[0].id);
+  const [alertMessage, setAlertMessage] = useState("Carregando alertas da disciplina...");
+
+  useEffect(() => {
+    let active = true;
+    async function loadTeacherData() {
+      if (!supabase) {
+        setAlerts(demoTeacherAlerts);
+        setAlertMessage("Modo de demonstração: há 1 alerta de Matemática.");
+        return;
+      }
+      try {
+        const [alertsResponse, studentsResponse] = await Promise.all([
+          apiFetch("/teacher/difficulty-alerts"),
+          apiFetch("/teacher/students"),
+        ]);
+        if (!alertsResponse.ok || !studentsResponse.ok) throw new Error("teacher-data");
+        const nextAlerts = (await alertsResponse.json()) as TeacherAlert[];
+        const nextStudents = (await studentsResponse.json()) as TeacherStudent[];
+        if (!active) return;
+        setAlerts(nextAlerts);
+        setStudents(nextStudents);
+        setSelectedId((current) =>
+          nextStudents.some((student) => student.id === current)
+            ? current
+            : (nextStudents[0]?.id ?? ""),
+        );
+        setAlertMessage(
+          nextAlerts.length
+            ? `${nextAlerts.length} alerta(s) ativo(s) na sua disciplina.`
+            : "Nenhuma dificuldade importante está ativa agora.",
+        );
+      } catch {
+        if (active) {
+          setAlerts([]);
+          setAlertMessage("Não foi possível atualizar os alertas. Tente novamente mais tarde.");
+        }
+      }
+    }
+    void loadTeacherData();
+    return () => {
+      active = false;
+    };
+  }, []);
+
+  const selected = students.find((student) => student.id === selectedId) ?? students[0];
+  const selectedAlerts = alerts.filter(
+    (alert) => alert.student_id === selected?.id || alert.student_name === selected?.full_name,
+  );
+  const hasDifficulty = selectedAlerts.length > 0;
   return (
     <main className="profile-page">
       <Header area="ÁREA DO PROFESSOR" onLogout={onLogout} />
@@ -720,57 +793,83 @@ function TeacherProfile({ onLogout }: { onLogout: () => void }) {
         <p className="eyebrow">ACOMPANHAMENTO DE TURMA</p>
         <h1>Visão dos estudantes</h1>
         <p className="subtitle">
-          Selecione um estudante para acompanhar acesso, tempo de estudo e
-          dificuldades.
+          Acompanhe somente a disciplina sob sua responsabilidade.
         </p>
+        <section className="teacher-alerts" aria-labelledby="difficulty-alerts-title">
+          <div className="section-heading">
+            <h2 id="difficulty-alerts-title">Alertas de dificuldade</h2>
+            <span>Atualização automática</span>
+          </div>
+          <p className="teacher-alert-status" role="status" aria-live="polite">
+            {alertMessage}
+          </p>
+          {alerts.length > 0 && (
+            <div className="alert-grid">
+              {alerts.map((alert) => (
+                <article className="difficulty-alert" key={alert.id}>
+                  <Difficulty level="Atenção" tone="high" />
+                  <strong>{alert.student_name}</strong>
+                  <span>{alert.subject} · {alert.topic}</span>
+                  <p>{alert.accuracy}% de acertos em {alert.attempts} tentativas</p>
+                </article>
+              ))}
+            </div>
+          )}
+        </section>
         <div className="teacher-layout">
           <section className="profile-panel student-list">
             <h2>Estudantes</h2>
             {students.map((student) => (
               <button
-                key={student.name}
-                onClick={() => setSelected(student)}
-                className={`student-item ${selected.name === student.name ? "selected" : ""}`}
+                key={student.id}
+                onClick={() => setSelectedId(student.id)}
+                className={`student-item ${selected?.id === student.id ? "selected" : ""}`}
               >
-                <Avatar name={student.name} />
+                <Avatar name={student.full_name} />
                 <span>
-                  <strong>{student.name}</strong>
+                  <strong>{student.full_name}</strong>
                   <small>{student.grade}</small>
                 </span>
               </button>
             ))}
           </section>
           <section className="profile-panel tracking-panel">
-            <div className="selected-student">
-              <Avatar name={selected.name} />
-              <div>
-                <h2>{selected.name}</h2>
-                <p>{selected.grade}</p>
-              </div>
-            </div>
-            <h3>Matérias acessadas</h3>
-            <div className="access-row">
-              <strong>{selected.subject}</strong>
-              <span>Último acesso: hoje</span>
-            </div>
-            <div className="metrics">
-              <div>
-                <span>Tempo na matéria</span>
-                <strong>{selected.time}</strong>
-              </div>
-              <div>
-                <span>Nível de dificuldade</span>
-                <Difficulty level={selected.difficulty} tone={selected.tone} />
-              </div>
-            </div>
-            <div className="teacher-note">
-              <strong>Ponto de atenção</strong>
-              <p>
-                {selected.difficulty === "Alta"
-                  ? "Recomendar exercícios guiados e revisão do conteúdo."
-                  : "Manter acompanhamento e sugerir a próxima aula do módulo."}
-              </p>
-            </div>
+            {selected ? (
+              <>
+                <div className="selected-student">
+                  <Avatar name={selected.full_name} />
+                  <div>
+                    <h2>{selected.full_name}</h2>
+                    <p>{selected.grade}</p>
+                  </div>
+                </div>
+                <h3>Disciplina acompanhada</h3>
+                <div className="access-row">
+                  <strong>{selected.subject}</strong>
+                  <span>Dados restritos à sua matéria</span>
+                </div>
+                <div className="metrics">
+                  <div>
+                    <span>Alertas ativos</span>
+                    <strong>{selectedAlerts.length}</strong>
+                  </div>
+                  <div>
+                    <span>Nível de dificuldade</span>
+                    <Difficulty level={hasDifficulty ? "Alta" : "Acompanhando"} tone={hasDifficulty ? "high" : "low"} />
+                  </div>
+                </div>
+                <div className="teacher-note">
+                  <strong>Ponto de atenção</strong>
+                  <p>
+                    {hasDifficulty
+                      ? "Vale revisar esse conteúdo com exercícios guiados."
+                      : "Sem alerta importante nesta disciplina por enquanto."}
+                  </p>
+                </div>
+              </>
+            ) : (
+              <p className="empty-state">Nenhum estudante foi encontrado nesta disciplina.</p>
+            )}
           </section>
         </div>
       </section>
@@ -785,6 +884,7 @@ function AdminProfile({ onLogout }: { onLogout: () => void }) {
     { name: "Prof. Carlos Lima", role: "Professor" },
   ]);
   const [message, setMessage] = useState("");
+  const [selectedRole, setSelectedRole] = useState<"student" | "teacher">("student");
   /** Envia dados ao servidor, onde o token e o cargo de admin são verificados. */
   async function addPerson(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -802,6 +902,7 @@ function AdminProfile({ onLogout }: { onLogout: () => void }) {
           email: String(data.get("email")),
           password: String(data.get("password")),
           role,
+          subject: role === "teacher" ? String(data.get("subject")) : undefined,
         }),
       });
       if (!response.ok) {
@@ -846,11 +947,29 @@ function AdminProfile({ onLogout }: { onLogout: () => void }) {
               </label>
               <label>
                 CARGO
-                <select name="role" defaultValue="student">
+                <select
+                  name="role"
+                  value={selectedRole}
+                  onChange={(event) => setSelectedRole(event.target.value as "student" | "teacher")}
+                >
                   <option value="student">Estudante</option>
                   <option value="teacher">Professor</option>
                 </select>
               </label>
+              {selectedRole === "teacher" && (
+                <label>
+                  DISCIPLINA
+                  <input
+                    name="subject"
+                    placeholder="Ex: Matemática"
+                    required
+                    aria-describedby="subject-help"
+                  />
+                  <small id="subject-help" className="field-help">
+                    Cada disciplina recebe um único professor neste projeto.
+                  </small>
+                </label>
+              )}
               {message && (
                 <p className="form-message" role="status">
                   {message}
