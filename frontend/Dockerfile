@@ -15,4 +15,4 @@ COPY --from=build /app/dist /usr/share/nginx/html
 
 RUN chmod +x /docker-entrypoint.d/40-runtime-config.sh
 
-EXPOSE 8080
+EXPOSE 80
