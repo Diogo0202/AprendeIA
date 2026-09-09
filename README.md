@@ -163,6 +163,7 @@ As regras são verificadas na API e também no banco com políticas RLS. Assim, 
    - `supabase/migrations/20260908150000_teacher_subject_alerts.sql`
    - `supabase/migrations/20260908170000_student_gamification.sql`
    - `supabase/migrations/20260909120000_teacher_dashboard.sql`
+   - `supabase/migrations/20260909211500_post_deploy_hardening.sql`
 3. Crie sua primeira conta pela interface.
 4. No SQL Editor, promova somente essa conta inicial:
 

@@ -45,7 +45,7 @@ A resposta contém diagnóstico pedagógico, objetivo, três a cinco ações e u
 
 ## Segurança
 
-A migration `20260909120000_teacher_dashboard.sql` ativa RLS em `classes`, `class_students`, `learning_contents` e `pedagogical_recommendations`. As políticas repetem no banco o mesmo limite verificado pelo FastAPI:
+As migrations `20260909120000_teacher_dashboard.sql` e `20260909211500_post_deploy_hardening.sql` ativam e refinam o RLS em `classes`, `class_students`, `learning_contents` e `pedagogical_recommendations`. As políticas repetem no banco o mesmo limite verificado pelo FastAPI:
 
 - estudante vê somente o próprio vínculo de turma e conteúdos das matérias em que está matriculado;
 - professor gerencia apenas as próprias turmas e materiais da própria disciplina;
@@ -53,4 +53,3 @@ A migration `20260909120000_teacher_dashboard.sql` ativa RLS em `classes`, `clas
 - administradores não recebem acesso aos dados pedagógicos.
 
 O modo `?demo=teacher` funciona apenas quando o frontend está sem Supabase. Ele serve para apresentação local e não cria token nem libera endpoints protegidos.
-
