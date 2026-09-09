@@ -40,6 +40,8 @@ WEEKLY_SUMMARY_CRON_SECRET
 
 Use um endereço remetente permitido pelo seu provedor SMTP. Não coloque nenhum desses valores no frontend, no README público ou no Supabase.
 
+Antes do envio real, autentique o domínio do remetente com SPF, DKIM e DMARC. Comece o DMARC em modo de monitoramento e só endureça a política depois de confirmar que os e-mails legítimos passam na validação. Também acompanhe rejeições e mantenha o volume semanal previsível para proteger a entregabilidade.
+
 ## Resumo semanal
 
 Agende uma chamada semanal para:

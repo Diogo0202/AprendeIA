@@ -46,7 +46,7 @@ def build_weekly_email(
 ) -> tuple[str, str]:
     """Resume somente os alertas da disciplina de quem recebe a mensagem."""
 
-    lines = [f"Olá, {teacher_name}!", "", f"Resumo semanal de dificuldades — {subject_name}:", ""]
+    lines = [f"Olá, {teacher_name}!", "", f"Resumo semanal de dificuldades - {subject_name}:", ""]
     for alert in alerts:
         lines.append(
             "- {student_name}: {topic} ({accuracy_percent:g}% em {attempts} tentativas)".format(

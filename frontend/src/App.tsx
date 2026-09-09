@@ -29,31 +29,94 @@ async function apiFetch(path: string, init: RequestInit = {}) {
   if (token) headers.set("Authorization", `Bearer ${token}`);
   return fetch(`${apiUrl}${path}`, { ...init, headers });
 }
-const subjects = [
+type Subject = {
+  name: string;
+  category: string;
+  code: string;
+  module: string;
+  completed: number;
+  total: number;
+  difficulty: string;
+  tone: string;
+  coverTone: string;
+};
+
+// O catálogo local deixa a demonstração completa enquanto os dados reais vêm da API.
+const subjects: Subject[] = [
   {
     name: "Matemática",
+    category: "Ciências Exatas",
+    code: "M",
     module: "Frações e porcentagens",
     completed: 5,
     total: 8,
     difficulty: "Alta",
     tone: "high",
+    coverTone: "math",
   },
   {
     name: "Português",
+    category: "Linguagens",
+    code: "PT",
     module: "Interpretação de texto",
     completed: 4,
     total: 6,
     difficulty: "Média",
     tone: "medium",
+    coverTone: "language",
   },
   {
     name: "Ciências",
+    category: "Ciências da Natureza",
+    code: "C",
     module: "Sistema solar",
     completed: 6,
     total: 6,
     difficulty: "Baixa",
     tone: "low",
+    coverTone: "science",
   },
+  {
+    name: "História",
+    category: "Ciências Humanas",
+    code: "H",
+    module: "Brasil República",
+    completed: 3,
+    total: 7,
+    difficulty: "Média",
+    tone: "medium",
+    coverTone: "history",
+  },
+  {
+    name: "Geografia",
+    category: "Ciências Humanas",
+    code: "G",
+    module: "Clima e vegetação",
+    completed: 2,
+    total: 6,
+    difficulty: "Alta",
+    tone: "high",
+    coverTone: "geography",
+  },
+  {
+    name: "Inglês",
+    category: "Linguagens",
+    code: "EN",
+    module: "Leitura e vocabulário",
+    completed: 4,
+    total: 8,
+    difficulty: "Baixa",
+    tone: "low",
+    coverTone: "english",
+  },
+];
+
+const subjectCategories = [
+  "Todas",
+  "Ciências Exatas",
+  "Linguagens",
+  "Ciências da Natureza",
+  "Ciências Humanas",
 ];
 
 type Achievement = {
@@ -94,7 +157,58 @@ type TeacherStudent = {
   id: string;
   full_name: string;
   grade: string;
+  email?: string;
+  subject?: string;
+  accuracy: number;
+  attempts: number;
+  difficulty: string;
+  time_minutes: number;
+  completed_lessons: number;
+  trend: TrendPoint[];
+  difficulties: { topic: string; accuracy: number; attempts: number }[];
+  recent_attempts: { answered_at: string; topic: string; correct: boolean }[];
+};
+
+type TrendPoint = {
+  week: string;
+  accuracy: number;
+  difficulty_score: number;
+  attempts: number;
+  level: string;
+};
+
+type TeacherClass = {
+  id: string;
+  name: string;
+  school_year: string;
   subject: string;
+  student_count: number;
+  students?: TeacherStudent[];
+  trend?: TrendPoint[];
+};
+
+type TeacherOverview = {
+  subject: string;
+  class_count: number;
+  student_count: number;
+  active_alerts: number;
+  average_accuracy: number;
+};
+
+type TeacherContent = {
+  id: string;
+  title: string;
+  description: string;
+  content_type: "lesson" | "exercise" | "video" | "link";
+  source_url: string;
+  created_at?: string;
+};
+
+type TeacherRecommendation = {
+  diagnosis: string;
+  objective: string;
+  actions: string[];
+  content_suggestion: string;
 };
 
 type TeacherAlert = {
@@ -116,14 +230,87 @@ const demoTeacherStudents: TeacherStudent[] = [
     full_name: "Ana Souza",
     grade: "8º ano",
     subject: "Matemática",
+    accuracy: 42,
+    attempts: 12,
+    difficulty: "Alta",
+    time_minutes: 155,
+    completed_lessons: 5,
+    trend: [
+      { week: "S34", accuracy: 38, difficulty_score: 62, attempts: 4, level: "Alta" },
+      { week: "S35", accuracy: 46, difficulty_score: 54, attempts: 5, level: "Alta" },
+      { week: "S36", accuracy: 58, difficulty_score: 42, attempts: 3, level: "Alta" },
+    ],
+    difficulties: [{ topic: "Frações", accuracy: 40, attempts: 5 }],
+    recent_attempts: [
+      { answered_at: "2026-09-08", topic: "Frações equivalentes", correct: true },
+      { answered_at: "2026-09-07", topic: "Porcentagem", correct: false },
+    ],
   },
   {
     id: "demo-bruno",
     full_name: "Bruno Lima",
     grade: "8º ano",
     subject: "Matemática",
+    accuracy: 78,
+    attempts: 18,
+    difficulty: "Média",
+    time_minutes: 194,
+    completed_lessons: 7,
+    trend: [
+      { week: "S34", accuracy: 62, difficulty_score: 38, attempts: 6, level: "Média" },
+      { week: "S35", accuracy: 72, difficulty_score: 28, attempts: 6, level: "Média" },
+      { week: "S36", accuracy: 83, difficulty_score: 17, attempts: 6, level: "Baixa" },
+    ],
+    difficulties: [{ topic: "Equações", accuracy: 68, attempts: 6 }],
+    recent_attempts: [
+      { answered_at: "2026-09-08", topic: "Equações", correct: true },
+      { answered_at: "2026-09-06", topic: "Frações", correct: true },
+    ],
   },
 ];
+
+const demoTeacherClasses: TeacherClass[] = [
+  {
+    id: "demo-class-a",
+    name: "8º ano A",
+    school_year: "2026",
+    subject: "Matemática",
+    student_count: 2,
+    students: demoTeacherStudents,
+    trend: [
+      { week: "S34", accuracy: 50, difficulty_score: 50, attempts: 10, level: "Alta" },
+      { week: "S35", accuracy: 59, difficulty_score: 41, attempts: 11, level: "Alta" },
+      { week: "S36", accuracy: 71, difficulty_score: 29, attempts: 9, level: "Média" },
+    ],
+  },
+  {
+    id: "demo-class-b",
+    name: "9º ano B",
+    school_year: "2026",
+    subject: "Matemática",
+    student_count: 0,
+    students: [],
+    trend: [],
+  },
+];
+
+const demoTeacherContents: TeacherContent[] = [
+  {
+    id: "demo-content-1",
+    title: "Frações com apoio visual",
+    description: "Sequência curta para retomar equivalência e comparação.",
+    content_type: "lesson",
+    source_url: "",
+  },
+  {
+    id: "demo-content-2",
+    title: "Lista guiada de porcentagem",
+    description: "Exercícios progressivos com situações do dia a dia.",
+    content_type: "exercise",
+    source_url: "",
+  },
+];
+
 const demoTeacherAlerts: TeacherAlert[] = [
   {
     id: "demo-alert",
@@ -143,8 +330,12 @@ const demoTeacherAlerts: TeacherAlert[] = [
  * O cargo sempre é carregado de `profiles`; o formulário não decide permissões.
  */
 export default function App() {
-  const [view, setView] = useState<View>("login");
-  const [profile, setProfile] = useState(initialProfile);
+  // O atalho de apresentação só existe sem Supabase; ele não cria sessão nem
+  // atravessa as permissões do backend.
+  const demoTeacher = !isSupabaseConfigured && new URLSearchParams(window.location.search).get("demo") === "teacher";
+  const [view, setView] = useState<View>(demoTeacher ? "teacher" : "login");
+  const [profile, setProfile] = useState<UserProfile>(demoTeacher ? { ...initialProfile, role: "teacher" } : initialProfile);
+  const [practiceSubject, setPracticeSubject] = useState("Matemática");
   const [authMessage, setAuthMessage] = useState("");
   const [authLoading, setAuthLoading] = useState(isSupabaseConfigured);
   const enter = (role: Role) => setView(role);
@@ -286,7 +477,10 @@ export default function App() {
       <StudentProfile
         profile={profile}
         onLogout={logout}
-        onPractice={() => setView("practice")}
+        onPractice={(subject = "Matemática") => {
+          setPracticeSubject(subject);
+          setView("practice");
+        }}
       />
     );
   if (view === "practice")
@@ -294,7 +488,11 @@ export default function App() {
       return <AccessDenied onLogout={logout} />;
   if (view === "practice")
     return (
-      <PracticeProfile onBack={() => setView("student")} onLogout={logout} />
+      <PracticeProfile
+        initialSubject={practiceSubject}
+        onBack={() => setView("student")}
+        onLogout={logout}
+      />
     );
   if (view === "teacher")
     return profile.role === "teacher" ? (
@@ -538,12 +736,14 @@ function StudentProfile({
 }: {
   profile: UserProfile;
   onLogout: () => void;
-  onPractice: () => void;
+  onPractice: (subject?: string) => void;
 }) {
   const [gamification, setGamification] = useState<GamificationSummary | null>(
     isSupabaseConfigured ? null : demoGamification,
   );
   const [gamificationError, setGamificationError] = useState("");
+  const [subjectQuery, setSubjectQuery] = useState("");
+  const [activeCategory, setActiveCategory] = useState("Todas");
 
   // A pontuação vem da API para que o navegador nunca consiga premiar a si mesmo.
   useEffect(() => {
@@ -572,6 +772,18 @@ function StudentProfile({
     ? ({ "--progress": gamification.level_progress } as CSSProperties &
         Record<"--progress", number>)
     : undefined;
+
+  const normalizedQuery = subjectQuery.trim().toLocaleLowerCase("pt-BR");
+  const visibleSubjects = subjects.filter((subject) => {
+    const matchesCategory =
+      activeCategory === "Todas" || subject.category === activeCategory;
+    const matchesSearch =
+      !normalizedQuery ||
+      `${subject.name} ${subject.module} ${subject.category}`
+        .toLocaleLowerCase("pt-BR")
+        .includes(normalizedQuery);
+    return matchesCategory && matchesSearch;
+  });
 
   return (
     <main className="profile-page">
@@ -626,42 +838,78 @@ function StudentProfile({
           </section>
         </section>
         {gamificationError && <p className="gamification-message" role="status">{gamificationError}</p>}
-        <button className="primary-button practice-button" onClick={onPractice}>
+        <button className="primary-button practice-button" onClick={() => onPractice()}>
           Praticar questões com IA
         </button>
-        <section className="section">
-          <div className="section-heading">
-            <h2>Minhas matérias</h2>
-            <span>Progresso dos módulos</span>
+        <section className="section subject-catalog" aria-labelledby="subjects-title">
+          <div className="catalog-heading">
+            <div>
+              <h2 id="subjects-title">Todas as matérias</h2>
+              <p>Escolha uma matéria e continue pelo módulo em andamento.</p>
+            </div>
+            <label className="subject-search">
+              <span>Buscar matéria</span>
+              <input
+                type="search"
+                value={subjectQuery}
+                onChange={(event) => setSubjectQuery(event.target.value)}
+                placeholder="Ex.: Matemática"
+              />
+            </label>
           </div>
-          <div className="subject-grid">
-            {subjects.map((subject) => (
-              <article className="subject-card" key={subject.name}>
-                <div>
-                  <h3>{subject.name}</h3>
-                  <p>{subject.module}</p>
-                </div>
-                <div className="progress-copy">
-                  <strong>
-                    {subject.completed}/{subject.total}
-                  </strong>
-                  <span>aulas concluídas</span>
-                </div>
-                <div className="progress">
-                  <i
-                    style={{
-                      width: `${(subject.completed / subject.total) * 100}%`,
-                    }}
-                  />
-                </div>
-                <p className="classes-left">
-                  Faltam{" "}
-                  <strong>{subject.total - subject.completed} aulas</strong>{" "}
-                  neste módulo
-                </p>
-              </article>
+          <div className="category-filters" role="group" aria-label="Filtrar matérias por área">
+            {subjectCategories.map((category) => (
+              <button
+                className={activeCategory === category ? "active" : ""}
+                type="button"
+                aria-pressed={activeCategory === category}
+                onClick={() => setActiveCategory(category)}
+                key={category}
+              >
+                {category}
+              </button>
             ))}
           </div>
+          {visibleSubjects.length ? (
+            <div className="subject-grid">
+            {visibleSubjects.map((subject) => (
+              <article className="subject-card" key={subject.name}>
+                <div className={`subject-cover ${subject.coverTone}`}>
+                  <span>{subject.category}</span>
+                  <strong aria-hidden="true">{subject.code}</strong>
+                </div>
+                <div className="subject-card-body">
+                  <div className="subject-card-heading">
+                    <span className={`difficulty ${subject.tone}`}>{subject.difficulty}</span>
+                  <h3>{subject.name}</h3>
+                  <p>{subject.module}</p>
+                  </div>
+                  <div className="course-meta" aria-label={`Progresso em ${subject.name}`}>
+                    <span><strong>{subject.total}</strong> aulas</span>
+                    <span><strong>{subject.completed}</strong> concluídas</span>
+                  </div>
+                  <progress
+                    className="course-progress"
+                    value={subject.completed}
+                    max={subject.total}
+                    aria-label={`${subject.completed} de ${subject.total} aulas concluídas`}
+                  />
+                  <div className="subject-card-footer">
+                    <span>Faltam {subject.total - subject.completed} aulas</span>
+                    <button type="button" onClick={() => onPractice(subject.name)}>
+                      Continuar
+                    </button>
+                  </div>
+                </div>
+              </article>
+            ))}
+            </div>
+          ) : (
+            <div className="catalog-empty" role="status">
+              <strong>Nenhuma matéria encontrada.</strong>
+              <span>Limpe a busca ou escolha outra área.</span>
+            </div>
+          )}
         </section>
         <section className="section">
           <div className="section-heading">
@@ -696,29 +944,62 @@ type Question = {
   explanation: string;
 };
 
-// A questão reserva evita uma tela vazia durante apresentações offline.
-const fallbackQuestion: Question = {
-  id: "seed-fracoes-1",
-  subject: "Matemática",
-  topic: "Frações",
-  difficulty: "basic",
-  question: "Qual fração representa a metade de uma pizza?",
-  options: ["1/2", "1/3", "2/3", "3/4"],
-  correct_index: 0,
-  explanation:
-    "Uma metade significa dividir o todo em duas partes iguais e considerar uma delas: 1/2.",
+// Cada matéria tem uma reserva coerente para a demonstração funcionar sem a API.
+const fallbackQuestions: Record<string, Question> = {
+  Matemática: {
+    id: "seed-fracoes-1", subject: "Matemática", topic: "Frações", difficulty: "basic",
+    question: "Qual fração representa a metade de uma pizza?",
+    options: ["1/2", "1/3", "2/3", "3/4"], correct_index: 0,
+    explanation: "Uma metade divide o todo em duas partes iguais e considera uma delas: 1/2.",
+  },
+  Português: {
+    id: "seed-portugues-1", subject: "Português", topic: "Interpretação", difficulty: "basic",
+    question: "Em uma notícia, qual parte costuma resumir o assunto principal?",
+    options: ["O título", "A assinatura", "A data", "A legenda"], correct_index: 0,
+    explanation: "O título apresenta de forma curta o assunto principal da notícia.",
+  },
+  Ciências: {
+    id: "seed-ciencias-1", subject: "Ciências", topic: "Sistema solar", difficulty: "basic",
+    question: "Qual planeta é conhecido como Planeta Vermelho?",
+    options: ["Vênus", "Marte", "Júpiter", "Mercúrio"], correct_index: 1,
+    explanation: "Marte recebe esse nome por causa dos minerais de ferro presentes em sua superfície.",
+  },
+  História: {
+    id: "seed-historia-1", subject: "História", topic: "Brasil República", difficulty: "basic",
+    question: "Em que ano foi proclamada a República no Brasil?",
+    options: ["1822", "1888", "1889", "1930"], correct_index: 2,
+    explanation: "A República foi proclamada em 15 de novembro de 1889.",
+  },
+  Geografia: {
+    id: "seed-geografia-1", subject: "Geografia", topic: "Clima", difficulty: "basic",
+    question: "Qual instrumento é usado para medir a temperatura do ar?",
+    options: ["Barômetro", "Termômetro", "Pluviômetro", "Anemômetro"], correct_index: 1,
+    explanation: "O termômetro mede a temperatura do ar; os outros instrumentos medem pressão, chuva e vento.",
+  },
+  Inglês: {
+    id: "seed-ingles-1", subject: "Inglês", topic: "Vocabulário", difficulty: "basic",
+    question: "Qual é a tradução mais comum de 'book'?",
+    options: ["Caderno", "Caneta", "Livro", "Mesa"], correct_index: 2,
+    explanation: "A palavra 'book' significa 'livro' em português.",
+  },
 };
+
+function fallbackForSubject(subject: string) {
+  return fallbackQuestions[subject] ?? fallbackQuestions.Matemática;
+}
 
 /** Executa o ciclo adaptativo: buscar, responder, explicar e avançar. */
 function PracticeProfile({
+  initialSubject,
   onBack,
   onLogout,
 }: {
+  initialSubject: string;
   onBack: () => void;
   onLogout: () => void;
 }) {
-  const [subject, setSubject] = useState("Matemática");
-  const [question, setQuestion] = useState<Question>(fallbackQuestion);
+  const [subject, setSubject] = useState(initialSubject);
+  const [question, setQuestion] = useState<Question>(() => fallbackForSubject(initialSubject));
   const [selected, setSelected] = useState<number | null>(null);
   const [result, setResult] = useState<{
     correct: boolean;
@@ -738,7 +1019,7 @@ function PracticeProfile({
       if (!response.ok) throw new Error();
       setQuestion(await response.json());
     } catch {
-      setQuestion({ ...fallbackQuestion, subject });
+      setQuestion(fallbackForSubject(subject));
     } finally {
       setLoading(false);
     }
@@ -783,6 +1064,9 @@ function PracticeProfile({
             <option>Matemática</option>
             <option>Português</option>
             <option>Ciências</option>
+            <option>História</option>
+            <option>Geografia</option>
+            <option>Inglês</option>
           </select>
           <button className="outline-button" onClick={loadQuestion}>
             {loading ? "Gerando..." : "Nova questão"}
@@ -844,148 +1128,534 @@ function PracticeProfile({
   );
 }
 
-/** Organiza a observação dos alunos sem expor funções administrativas. */
+/** Reúne as tarefas diárias do professor sem misturar funções administrativas. */
 function TeacherProfile({ onLogout }: { onLogout: () => void }) {
-  const [students, setStudents] = useState<TeacherStudent[]>(demoTeacherStudents);
-  const [alerts, setAlerts] = useState<TeacherAlert[]>([]);
-  const [selectedId, setSelectedId] = useState(demoTeacherStudents[0].id);
-  const [alertMessage, setAlertMessage] = useState("Carregando alertas da disciplina...");
+  type TeacherTab = "overview" | "classes" | "reports" | "contents" | "ai";
+  const [activeTab, setActiveTab] = useState<TeacherTab>("overview");
+  const [overview, setOverview] = useState<TeacherOverview>({
+    subject: "Matemática",
+    class_count: 2,
+    student_count: 2,
+    active_alerts: 1,
+    average_accuracy: 60,
+  });
+  const [classes, setClasses] = useState<TeacherClass[]>(demoTeacherClasses);
+  const [selectedClassId, setSelectedClassId] = useState(demoTeacherClasses[0].id);
+  const [selectedClass, setSelectedClass] = useState<TeacherClass>(demoTeacherClasses[0]);
+  const [selectedStudentId, setSelectedStudentId] = useState(demoTeacherStudents[0].id);
+  const [alerts, setAlerts] = useState<TeacherAlert[]>(demoTeacherAlerts);
+  const [contents, setContents] = useState<TeacherContent[]>(demoTeacherContents);
+  const [recommendation, setRecommendation] = useState<TeacherRecommendation | null>(null);
+  const [message, setMessage] = useState("Painel pronto para acompanhar sua disciplina.");
+  const [busy, setBusy] = useState(false);
 
   useEffect(() => {
     let active = true;
-    async function loadTeacherData() {
-      if (!supabase) {
-        setAlerts(demoTeacherAlerts);
-        setAlertMessage("Modo de demonstração: há 1 alerta de Matemática.");
-        return;
-      }
+    async function loadDashboard() {
+      if (!supabase) return;
+      setBusy(true);
       try {
-        const [alertsResponse, studentsResponse] = await Promise.all([
+        const [overviewResponse, classesResponse, alertsResponse, contentsResponse] = await Promise.all([
+          apiFetch("/teacher/overview"),
+          apiFetch("/teacher/classes"),
           apiFetch("/teacher/difficulty-alerts"),
-          apiFetch("/teacher/students"),
+          apiFetch("/teacher/contents"),
         ]);
-        if (!alertsResponse.ok || !studentsResponse.ok) throw new Error("teacher-data");
-        const nextAlerts = (await alertsResponse.json()) as TeacherAlert[];
-        const nextStudents = (await studentsResponse.json()) as TeacherStudent[];
-        if (!active) return;
-        setAlerts(nextAlerts);
-        setStudents(nextStudents);
-        setSelectedId((current) =>
-          nextStudents.some((student) => student.id === current)
-            ? current
-            : (nextStudents[0]?.id ?? ""),
-        );
-        setAlertMessage(
-          nextAlerts.length
-            ? `${nextAlerts.length} alerta(s) ativo(s) na sua disciplina.`
-            : "Nenhuma dificuldade importante está ativa agora.",
-        );
-      } catch {
-        if (active) {
-          setAlerts([]);
-          setAlertMessage("Não foi possível atualizar os alertas. Tente novamente mais tarde.");
+        if (![overviewResponse, classesResponse, alertsResponse, contentsResponse].every((item) => item.ok)) {
+          throw new Error("dashboard-data");
         }
+        const nextClasses = (await classesResponse.json()) as TeacherClass[];
+        if (!active) return;
+        setOverview((await overviewResponse.json()) as TeacherOverview);
+        setClasses(nextClasses);
+        setAlerts((await alertsResponse.json()) as TeacherAlert[]);
+        setContents((await contentsResponse.json()) as TeacherContent[]);
+        setSelectedClassId(nextClasses[0]?.id ?? "");
+        setMessage("Dados atualizados com segurança.");
+      } catch {
+        if (active) setMessage("Não foi possível atualizar o painel. Tente novamente.");
+      } finally {
+        if (active) setBusy(false);
       }
     }
-    void loadTeacherData();
+    void loadDashboard();
     return () => {
       active = false;
     };
   }, []);
 
-  const selected = students.find((student) => student.id === selectedId) ?? students[0];
-  const selectedAlerts = alerts.filter(
-    (alert) => alert.student_id === selected?.id || alert.student_name === selected?.full_name,
-  );
-  const hasDifficulty = selectedAlerts.length > 0;
+  useEffect(() => {
+    let active = true;
+    async function loadClass() {
+      if (!selectedClassId) return;
+      if (!supabase) {
+        const demoClass = demoTeacherClasses.find((item) => item.id === selectedClassId);
+        if (demoClass) {
+          setSelectedClass(demoClass);
+          setSelectedStudentId(demoClass.students?.[0]?.id ?? "");
+        }
+        return;
+      }
+      try {
+        const response = await apiFetch(`/teacher/classes/${selectedClassId}`);
+        if (!response.ok) throw new Error("class-data");
+        const nextClass = (await response.json()) as TeacherClass;
+        if (!active) return;
+        setSelectedClass(nextClass);
+        setSelectedStudentId(nextClass.students?.[0]?.id ?? "");
+      } catch {
+        if (active) setMessage("Não foi possível abrir esta turma.");
+      }
+    }
+    void loadClass();
+    return () => {
+      active = false;
+    };
+  }, [selectedClassId]);
+
+  const selectedStudent = selectedClass.students?.find((student) => student.id === selectedStudentId);
+  const tabs: { id: TeacherTab; label: string }[] = [
+    { id: "overview", label: "Visão geral" },
+    { id: "classes", label: "Turmas" },
+    { id: "reports", label: "Relatórios" },
+    { id: "contents", label: "Conteúdos" },
+    { id: "ai", label: "Recomendação IA" },
+  ];
+
+  async function createClass(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    const form = event.currentTarget;
+    const data = new FormData(form);
+    const draft = {
+      name: String(data.get("name")),
+      school_year: String(data.get("school_year")),
+    };
+    setBusy(true);
+    try {
+      let created: TeacherClass;
+      if (supabase) {
+        const response = await apiFetch("/teacher/classes", { method: "POST", body: JSON.stringify(draft) });
+        if (!response.ok) throw new Error((await response.json().catch(() => ({}))).detail);
+        created = (await response.json()) as TeacherClass;
+      } else {
+        created = { id: `demo-${Date.now()}`, subject: overview.subject, student_count: 0, students: [], trend: [], ...draft };
+      }
+      setClasses((current) => [...current, created]);
+      setSelectedClass(created);
+      setSelectedClassId(created.id);
+      setActiveTab("classes");
+      setMessage("Turma criada com sucesso.");
+      form.reset();
+    } catch (error) {
+      setMessage(error instanceof Error && error.message ? error.message : "Não foi possível criar a turma.");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function addStudent(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    const form = event.currentTarget;
+    const email = String(new FormData(form).get("student_email"));
+    if (!selectedClassId) return;
+    setBusy(true);
+    try {
+      if (supabase) {
+        const response = await apiFetch(`/teacher/classes/${selectedClassId}/students`, {
+          method: "POST",
+          body: JSON.stringify({ student_email: email }),
+        });
+        if (!response.ok) throw new Error((await response.json().catch(() => ({}))).detail);
+        const refreshed = await apiFetch(`/teacher/classes/${selectedClassId}`);
+        setSelectedClass((await refreshed.json()) as TeacherClass);
+      } else {
+        setMessage("No modo de demonstração, use os alunos que já aparecem na turma.");
+        return;
+      }
+      setMessage("Estudante incluído na turma. Os dados pessoais não foram alterados.");
+      form.reset();
+    } catch (error) {
+      setMessage(error instanceof Error && error.message ? error.message : "Não foi possível incluir o estudante.");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function removeStudent(studentId: string) {
+    if (!supabase || !selectedClassId) {
+      setMessage("A remoção fica disponível quando o projeto estiver conectado ao Supabase.");
+      return;
+    }
+    setBusy(true);
+    try {
+      const response = await apiFetch(`/teacher/classes/${selectedClassId}/students/${studentId}`, { method: "DELETE" });
+      if (!response.ok) throw new Error("Não foi possível remover o vínculo.");
+      setSelectedClass((current) => ({
+        ...current,
+        student_count: Math.max(0, current.student_count - 1),
+        students: current.students?.filter((student) => student.id !== studentId),
+      }));
+      setMessage("Estudante removido da turma. O histórico foi preservado.");
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : "Não foi possível remover o estudante.");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function exportReport() {
+    if (!selectedClassId) return;
+    if (!supabase) {
+      setMessage("Relatório de demonstração preparado. Conecte o Supabase para baixar dados reais.");
+      return;
+    }
+    const response = await apiFetch(`/teacher/reports/export?class_id=${encodeURIComponent(selectedClassId)}`);
+    if (!response.ok) {
+      setMessage("Não foi possível exportar o relatório.");
+      return;
+    }
+    const url = URL.createObjectURL(await response.blob());
+    const anchor = document.createElement("a");
+    anchor.href = url;
+    anchor.download = `relatorio-${selectedClass.name}.csv`;
+    anchor.click();
+    URL.revokeObjectURL(url);
+    setMessage("Relatório exportado em CSV.");
+  }
+
+  async function createContent(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    const form = event.currentTarget;
+    const data = new FormData(form);
+    const draft = {
+      title: String(data.get("title")),
+      description: String(data.get("description")),
+      content_type: String(data.get("content_type")) as TeacherContent["content_type"],
+      source_url: String(data.get("source_url")),
+    };
+    setBusy(true);
+    try {
+      let created: TeacherContent;
+      if (supabase) {
+        const response = await apiFetch("/teacher/contents", { method: "POST", body: JSON.stringify(draft) });
+        if (!response.ok) throw new Error((await response.json().catch(() => ({}))).detail);
+        created = (await response.json()) as TeacherContent;
+      } else {
+        created = { id: `demo-content-${Date.now()}`, ...draft };
+      }
+      setContents((current) => [created, ...current]);
+      setMessage("Conteúdo salvo na sua disciplina.");
+      form.reset();
+    } catch (error) {
+      setMessage(error instanceof Error && error.message ? error.message : "Não foi possível salvar o conteúdo.");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function importContents(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    const form = event.currentTarget;
+    const file = (new FormData(form).get("content_file") as File | null);
+    if (!file || !/\.(csv|json)$/i.test(file.name) || file.size > 100_000) {
+      setMessage("Escolha um arquivo CSV ou JSON de até 100 KB.");
+      return;
+    }
+    if (!supabase) {
+      setMessage("Arquivo validado. A importação real precisa do Supabase conectado.");
+      return;
+    }
+    setBusy(true);
+    try {
+      const response = await apiFetch("/teacher/contents/import", {
+        method: "POST",
+        body: JSON.stringify({ format: file.name.toLowerCase().endsWith(".json") ? "json" : "csv", content: await file.text() }),
+      });
+      if (!response.ok) throw new Error((await response.json().catch(() => ({}))).detail);
+      const result = await response.json();
+      setContents((current) => [...result.contents, ...current]);
+      setMessage(`${result.imported} conteúdo(s) importado(s).`);
+      form.reset();
+    } catch (error) {
+      setMessage(error instanceof Error && error.message ? error.message : "Não foi possível importar o arquivo.");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function requestRecommendation() {
+    if (!selectedClassId) return;
+    setBusy(true);
+    setRecommendation(null);
+    try {
+      if (supabase) {
+        const response = await apiFetch("/teacher/recommendations", {
+          method: "POST",
+          body: JSON.stringify({ class_id: selectedClassId, student_id: selectedStudentId || undefined }),
+        });
+        if (!response.ok) throw new Error((await response.json().catch(() => ({}))).detail);
+        setRecommendation((await response.json()) as TeacherRecommendation);
+      } else {
+        setRecommendation({
+          diagnosis: "A turma está avançando, mas frações ainda concentram erros recorrentes.",
+          objective: "Consolidar equivalência de frações antes de avançar para porcentagem.",
+          actions: [
+            "Retomar o conceito com representações visuais.",
+            "Formar duplas para comparar estratégias de resolução.",
+            "Aplicar uma verificação curta no fim da aula.",
+          ],
+          content_suggestion: "Use a sequência Frações com apoio visual e finalize com cinco questões progressivas.",
+        });
+      }
+      setMessage("Recomendação pedagógica gerada para o contexto selecionado.");
+    } catch (error) {
+      setMessage(error instanceof Error && error.message ? error.message : "Não foi possível gerar a recomendação.");
+    } finally {
+      setBusy(false);
+    }
+  }
+
   return (
-    <main className="profile-page">
+    <main className="profile-page teacher-workspace">
       <Header area="ÁREA DO PROFESSOR" onLogout={onLogout} />
-      <section className="profile-content">
-        <p className="eyebrow">ACOMPANHAMENTO DE TURMA</p>
-        <h1>Visão dos estudantes</h1>
-        <p className="subtitle">
-          Acompanhe somente a disciplina sob sua responsabilidade.
-        </p>
-        <section className="teacher-alerts" aria-labelledby="difficulty-alerts-title">
-          <div className="section-heading">
-            <h2 id="difficulty-alerts-title">Alertas de dificuldade</h2>
-            <span>Atualização automática</span>
+      <div className="teacher-app-shell">
+        <aside className="teacher-sidebar" aria-label="Navegação do professor">
+          <div className="teacher-subject-stamp">
+            <span>DISCIPLINA</span>
+            <strong>{overview.subject}</strong>
+            <small>Acesso restrito à sua matéria</small>
           </div>
-          <p className="teacher-alert-status" role="status" aria-live="polite">
-            {alertMessage}
-          </p>
-          {alerts.length > 0 && (
-            <div className="alert-grid">
-              {alerts.map((alert) => (
-                <article className="difficulty-alert" key={alert.id}>
-                  <Difficulty level="Atenção" tone="high" />
-                  <strong>{alert.student_name}</strong>
-                  <span>{alert.subject} · {alert.topic}</span>
-                  <p>{alert.accuracy}% de acertos em {alert.attempts} tentativas</p>
-                </article>
-              ))}
-            </div>
-          )}
-        </section>
-        <div className="teacher-layout">
-          <section className="profile-panel student-list">
-            <h2>Estudantes</h2>
-            {students.map((student) => (
+          <nav className="teacher-nav">
+            {tabs.map((tab) => (
               <button
-                key={student.id}
-                onClick={() => setSelectedId(student.id)}
-                className={`student-item ${selected?.id === student.id ? "selected" : ""}`}
+                key={tab.id}
+                className={activeTab === tab.id ? "active" : ""}
+                onClick={() => setActiveTab(tab.id)}
+                aria-pressed={activeTab === tab.id}
               >
-                <Avatar name={student.full_name} />
-                <span>
-                  <strong>{student.full_name}</strong>
-                  <small>{student.grade}</small>
-                </span>
+                <span>{tab.label}</span>
               </button>
             ))}
-          </section>
-          <section className="profile-panel tracking-panel">
-            {selected ? (
-              <>
-                <div className="selected-student">
-                  <Avatar name={selected.full_name} />
-                  <div>
-                    <h2>{selected.full_name}</h2>
-                    <p>{selected.grade}</p>
+          </nav>
+          <div className="teacher-privacy-note">
+            <strong>Privacidade ativa</strong>
+            <p>Você só visualiza dados da sua disciplina e não altera o histórico dos alunos.</p>
+          </div>
+        </aside>
+
+        <section className="teacher-main">
+          <header className="teacher-heading">
+            <div>
+              <p className="eyebrow">PAINEL PEDAGÓGICO</p>
+              <h1>{tabs.find((tab) => tab.id === activeTab)?.label}</h1>
+            </div>
+            <p className="teacher-status" role="status" aria-live="polite">{busy ? "Atualizando dados..." : message}</p>
+          </header>
+
+          {activeTab === "overview" && (
+            <div className="teacher-view-stack">
+              <section className="teacher-metric-strip" aria-label="Resumo da disciplina">
+                <div><span>Turmas</span><strong>{overview.class_count}</strong></div>
+                <div><span>Estudantes</span><strong>{overview.student_count}</strong></div>
+                <div className="metric-emphasis"><span>Precisam de atenção</span><strong>{overview.active_alerts}</strong></div>
+                <div><span>Média de acertos</span><strong>{overview.average_accuracy}%</strong></div>
+              </section>
+              <div className="teacher-overview-grid">
+                <section className="teacher-surface teacher-alert-feed">
+                  <div className="teacher-section-title">
+                    <div><span className="section-index">01</span><h2>Prioridades de hoje</h2></div>
+                    <small>{alerts.length} alerta(s) ativo(s)</small>
                   </div>
-                </div>
-                <h3>Disciplina acompanhada</h3>
-                <div className="access-row">
-                  <strong>{selected.subject}</strong>
-                  <span>Dados restritos à sua matéria</span>
-                </div>
-                <div className="metrics">
-                  <div>
-                    <span>Alertas ativos</span>
-                    <strong>{selectedAlerts.length}</strong>
+                  {alerts.length ? alerts.map((alert) => (
+                    <button
+                      className="teacher-alert-row"
+                      key={alert.id}
+                      onClick={() => {
+                        setSelectedStudentId(alert.student_id ?? "");
+                        setActiveTab("classes");
+                      }}
+                    >
+                      <span className="alert-marker" />
+                      <span><strong>{alert.student_name}</strong><small>{alert.topic}</small></span>
+                      <span className="alert-score">{alert.accuracy}%</span>
+                    </button>
+                  )) : <p className="teacher-empty">Nenhum alerta importante agora.</p>}
+                </section>
+                <section className="teacher-surface">
+                  <div className="teacher-section-title">
+                    <div><span className="section-index">02</span><h2>Evolução da turma</h2></div>
+                    <small>Dificuldade por semana</small>
                   </div>
-                  <div>
-                    <span>Nível de dificuldade</span>
-                    <Difficulty level={hasDifficulty ? "Alta" : "Acompanhando"} tone={hasDifficulty ? "high" : "low"} />
+                  <DifficultyTrend points={selectedClass.trend ?? []} />
+                </section>
+              </div>
+            </div>
+          )}
+
+          {activeTab === "classes" && (
+            <div className="teacher-view-stack">
+              <div className="class-toolbar">
+                <label>
+                  TURMA ATUAL
+                  <select value={selectedClassId} onChange={(event) => setSelectedClassId(event.target.value)}>
+                    {classes.map((item) => <option key={item.id} value={item.id}>{item.name} · {item.school_year}</option>)}
+                  </select>
+                </label>
+                <form className="inline-class-form" onSubmit={createClass}>
+                  <input name="name" placeholder="Nova turma" minLength={2} maxLength={80} required aria-label="Nome da nova turma" />
+                  <input name="school_year" placeholder="Ano letivo" minLength={2} maxLength={30} required aria-label="Ano letivo" />
+                  <button className="primary-button" disabled={busy}>Criar turma</button>
+                </form>
+              </div>
+              <div className="class-workbench">
+                <section className="teacher-surface class-roster">
+                  <div className="teacher-section-title">
+                    <div><span className="section-index">{String(selectedClass.student_count).padStart(2, "0")}</span><h2>Alunos da turma</h2></div>
                   </div>
-                </div>
-                <div className="teacher-note">
-                  <strong>Ponto de atenção</strong>
-                  <p>
-                    {hasDifficulty
-                      ? "Vale revisar esse conteúdo com exercícios guiados."
-                      : "Sem alerta importante nesta disciplina por enquanto."}
-                  </p>
-                </div>
-              </>
-            ) : (
-              <p className="empty-state">Nenhum estudante foi encontrado nesta disciplina.</p>
-            )}
-          </section>
-        </div>
-      </section>
+                  <form className="add-student-form" onSubmit={addStudent}>
+                    <input name="student_email" type="email" placeholder="email@escola.com" required aria-label="E-mail do estudante" />
+                    <button className="outline-button" disabled={busy}>Incluir</button>
+                  </form>
+                  <div className="roster-list">
+                    {selectedClass.students?.length ? selectedClass.students.map((student) => (
+                      <button
+                        key={student.id}
+                        className={`roster-row ${selectedStudentId === student.id ? "selected" : ""}`}
+                        onClick={() => setSelectedStudentId(student.id)}
+                      >
+                        <Avatar name={student.full_name} />
+                        <span><strong>{student.full_name}</strong><small>{student.grade}</small></span>
+                        <Difficulty level={student.difficulty} tone={student.difficulty === "Alta" ? "high" : student.difficulty === "Média" ? "medium" : "low"} />
+                      </button>
+                    )) : <p className="teacher-empty">A turma ainda não possui estudantes.</p>}
+                  </div>
+                </section>
+                <section className="teacher-surface student-insight">
+                  {selectedStudent ? (
+                    <>
+                      <div className="student-insight-head">
+                        <div><Avatar name={selectedStudent.full_name} /><span><h2>{selectedStudent.full_name}</h2><small>{selectedStudent.grade}</small></span></div>
+                        <button className="text-button danger-text" onClick={() => void removeStudent(selectedStudent.id)}>Remover da turma</button>
+                      </div>
+                      <div className="student-number-line">
+                        <div><span>Acertos</span><strong>{selectedStudent.accuracy}%</strong></div>
+                        <div><span>Tentativas</span><strong>{selectedStudent.attempts}</strong></div>
+                        <div><span>Tempo</span><strong>{selectedStudent.time_minutes} min</strong></div>
+                        <div><span>Aulas feitas</span><strong>{selectedStudent.completed_lessons}</strong></div>
+                      </div>
+                      <div className="insight-chart-block">
+                        <div><h3>Trilha de dificuldade</h3><small>Quanto menor a barra, melhor a evolução.</small></div>
+                        <DifficultyTrend points={selectedStudent.trend} />
+                      </div>
+                      <div className="student-history">
+                        <h3>Histórico recente</h3>
+                        {selectedStudent.recent_attempts.map((attempt, index) => (
+                          <div key={`${attempt.answered_at}-${index}`}>
+                            <span className={attempt.correct ? "history-dot success" : "history-dot warning"} />
+                            <strong>{attempt.topic}</strong>
+                            <small>{attempt.correct ? "Acertou" : "Precisa revisar"} · {attempt.answered_at.slice(0, 10)}</small>
+                          </div>
+                        ))}
+                      </div>
+                    </>
+                  ) : <p className="teacher-empty">Selecione um estudante para abrir o histórico.</p>}
+                </section>
+              </div>
+            </div>
+          )}
+
+          {activeTab === "reports" && (
+            <section className="teacher-surface report-studio">
+              <div className="report-copy">
+                <p className="eyebrow">EXPORTAÇÃO SEGURA</p>
+                <h2>Relatório da turma</h2>
+                <p>Baixe acertos, tentativas, dificuldade e tempo de estudo da turma selecionada. O arquivo não inclui senhas nem dados de outras disciplinas.</p>
+              </div>
+              <div className="report-preview">
+                <span>RELATÓRIO ATUAL</span>
+                <strong>{selectedClass.name}</strong>
+                <small>{selectedClass.student_count} estudantes · {overview.subject}</small>
+                <button className="primary-button" onClick={() => void exportReport()}>Exportar CSV</button>
+              </div>
+            </section>
+          )}
+
+          {activeTab === "contents" && (
+            <div className="content-studio">
+              <section className="teacher-surface">
+                <div className="teacher-section-title"><div><span className="section-index">01</span><h2>Novo conteúdo</h2></div></div>
+                <form className="teacher-form" onSubmit={createContent}>
+                  <label>TÍTULO<input name="title" minLength={2} maxLength={120} required /></label>
+                  <label>DESCRIÇÃO<textarea name="description" maxLength={1000} rows={4} /></label>
+                  <div className="teacher-form-row">
+                    <label>TIPO<select name="content_type"><option value="lesson">Aula</option><option value="exercise">Exercício</option><option value="video">Vídeo</option><option value="link">Link</option></select></label>
+                    <label>LINK<input name="source_url" type="url" placeholder="https://" /></label>
+                  </div>
+                  <button className="primary-button" disabled={busy}>Salvar conteúdo</button>
+                </form>
+                <form className="content-import" onSubmit={importContents}>
+                  <label>IMPORTAR CSV OU JSON<input name="content_file" type="file" accept=".csv,.json" required /></label>
+                  <button className="outline-button" disabled={busy}>Importar arquivo</button>
+                </form>
+              </section>
+              <section className="teacher-surface content-library">
+                <div className="teacher-section-title"><div><span className="section-index">{String(contents.length).padStart(2, "0")}</span><h2>Biblioteca da disciplina</h2></div></div>
+                {contents.map((content) => (
+                  <article key={content.id}>
+                    <span>{content.content_type}</span>
+                    <strong>{content.title}</strong>
+                    <p>{content.description || "Sem descrição."}</p>
+                    {content.source_url && <a href={content.source_url} target="_blank" rel="noreferrer">Abrir material</a>}
+                  </article>
+                ))}
+              </section>
+            </div>
+          )}
+
+          {activeTab === "ai" && (
+            <section className="ai-studio">
+              <div className="ai-brief">
+                <p className="eyebrow">APOIO PEDAGÓGICO</p>
+                <h2>Transforme dados em uma próxima aula possível.</h2>
+                <p>A IA recebe somente métricas da turma ou do aluno escolhido, sem nomes e sem conteúdo de outras disciplinas.</p>
+                <label>TURMA<select value={selectedClassId} onChange={(event) => setSelectedClassId(event.target.value)}>{classes.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}</select></label>
+                <label>FOCO<select value={selectedStudentId} onChange={(event) => setSelectedStudentId(event.target.value)}><option value="">Turma inteira</option>{selectedClass.students?.map((student) => <option key={student.id} value={student.id}>{student.full_name}</option>)}</select></label>
+                <button className="primary-button" onClick={() => void requestRecommendation()} disabled={busy || !selectedClassId}>{busy ? "Analisando..." : "Gerar recomendação"}</button>
+              </div>
+              <article className="ai-result" aria-live="polite">
+                {recommendation ? (
+                  <>
+                    <span className="ai-result-label">RECOMENDAÇÃO PRONTA</span>
+                    <h3>{recommendation.objective}</h3>
+                    <p>{recommendation.diagnosis}</p>
+                    <ol>{recommendation.actions.map((action) => <li key={action}>{action}</li>)}</ol>
+                    <div><strong>Conteúdo sugerido</strong><p>{recommendation.content_suggestion}</p></div>
+                  </>
+                ) : (
+                  <div className="ai-empty"><span>IA</span><h3>O plano da próxima intervenção aparece aqui.</h3><p>Escolha uma turma ou estudante e gere uma recomendação.</p></div>
+                )}
+              </article>
+            </section>
+          )}
+        </section>
+      </div>
     </main>
+  );
+}
+
+/** Barras deixam a evolução legível sem depender de uma biblioteca pesada de gráficos. */
+function DifficultyTrend({ points }: { points: TrendPoint[] }) {
+  if (!points.length) return <p className="teacher-empty">Ainda não há tentativas suficientes para formar o gráfico.</p>;
+  return (
+    <div className="difficulty-trend" role="img" aria-label="Gráfico da dificuldade por semana">
+      {points.map((point) => (
+        <div className="trend-column" key={point.week} title={`${point.week}: dificuldade ${point.difficulty_score}%`}>
+          <span className="trend-value">{point.difficulty_score}%</span>
+          <span className="trend-bar-track"><span className="trend-bar" style={{ height: `${Math.max(8, point.difficulty_score)}%` }} /></span>
+          <small>{point.week.replace(/^\d{4}-/, "")}</small>
+        </div>
+      ))}
+    </div>
   );
 }
 

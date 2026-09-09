@@ -28,6 +28,8 @@ O modelo usa tabelas separadas para:
 - aprendizagem: `lesson_progress`, `question_attempts` e `student_difficulties`;
 - questões: `questions`.
 
+O painel docente acrescenta `classes`, `class_students`, `learning_contents` e `pedagogical_recommendations`. A turma é uma organização de trabalho: remover um vínculo não apaga o histórico do estudante.
+
 Tentativas são armazenadas como eventos imutáveis. Dificuldades são um resumo atualizado para selecionar rapidamente o próximo nível.
 
 ## Segurança
@@ -44,6 +46,8 @@ Todas as tabelas do schema público têm RLS. O papel `anon` não recebe acesso 
 A OpenAI gera uma questão por vez usando saída estruturada. O schema exige quatro alternativas, índice correto e explicação. O backend persiste o resultado e nunca envia a chave da OpenAI ao frontend.
 
 Depois da resposta, o servidor calcula a taxa de acerto. Com pelo menos três tentativas, desempenho a partir de 80% avança para `advanced`; abaixo de 60% retorna para `basic`; os demais casos usam `intermediate`.
+
+As recomendações pedagógicas usam métricas sem nomes ou e-mails, saída JSON estruturada e `store=False`. Antes da chamada, o backend confirma professor, disciplina, turma e estudante.
 
 ## Modo demonstrativo
 

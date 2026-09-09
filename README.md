@@ -11,7 +11,8 @@ O **AprendeIA** é um protótipo de plataforma de reforço escolar que combina R
 - 🏆 Jornada gamificada com XP, níveis, sequência de estudos e insígnias por consistência e acertos.
 - 🧩 Questões geradas por IA com níveis básico, intermediário e avançado.
 - 💡 Correção com explicações para transformar erro em aprendizado.
-- 👨‍🏫 Painel do professor para acompanhar estudantes vinculados, sem alterar seus dados.
+- 👨‍🏫 Dashboard do professor com turmas, histórico, gráficos, relatórios e conteúdos, sem alterar os dados dos estudantes.
+- 🧭 Recomendações pedagógicas geradas por IA a partir de métricas anônimas da disciplina.
 - 📬 Alertas de dificuldade por disciplina no painel e por e-mail para o professor responsável.
 - 🗓️ Resumo semanal dos alertas ativos, protegido por um segredo interno.
 - 🛠️ Área administrativa para cadastrar estudantes e professores.
@@ -52,7 +53,7 @@ AprendeIA/
 
 Os comentários explicam as escolhas que realmente importam: login, permissões, fluxo das telas e adaptação das questões. Para entender o panorama do projeto, veja [docs/ARQUITETURA.md](docs/ARQUITETURA.md).
 
-Para usar modelos locais e dividir tarefas entre IAs, consulte o [guia de modelos Ollama](docs/OLLAMA_MODELOS.md). 🤖 A regra de XP, níveis e insígnias está explicada em [docs/GAMIFICACAO.md](docs/GAMIFICACAO.md).
+Para usar modelos locais e dividir tarefas entre IAs, consulte o [guia de modelos Ollama](docs/OLLAMA_MODELOS.md). 🤖 A regra de XP, níveis e insígnias está explicada em [docs/GAMIFICACAO.md](docs/GAMIFICACAO.md), e a área docente em [docs/PAINEL_PROFESSOR.md](docs/PAINEL_PROFESSOR.md).
 
 Arquivos gerados automaticamente, como `package-lock.json`, ficam sem comentários para não quebrar seu formato. As versões das dependências continuam fixas para o projeto se comportar igual em outras máquinas.
 
@@ -143,6 +144,13 @@ As regras são verificadas na API e também no banco com políticas RLS. Assim, 
 | `GET` | `/student/gamification` | Mostra o XP, nível, sequência e conquistas do próprio estudante |
 | `GET` | `/teacher/students` | Mostra estudantes vinculados ao professor |
 | `GET` | `/teacher/difficulty-alerts` | Mostra alertas ativos da disciplina do professor |
+| `GET/POST` | `/teacher/classes` | Lista ou cria turmas da disciplina atribuída |
+| `GET` | `/teacher/classes/{class_id}` | Mostra alunos e evolução de uma turma autorizada |
+| `POST/DELETE` | `/teacher/classes/{class_id}/students[/{student_id}]` | Organiza vínculos sem alterar o histórico do aluno |
+| `GET` | `/teacher/reports/export` | Exporta o relatório CSV da turma |
+| `GET/POST` | `/teacher/contents` | Lista ou cria conteúdos da disciplina |
+| `POST` | `/teacher/contents/import` | Importa até 100 conteúdos em CSV ou JSON |
+| `POST` | `/teacher/recommendations` | Gera uma orientação pedagógica com métricas anônimas |
 | `POST` | `/admin/users` | Cria estudantes ou professores |
 | `POST` | `/internal/weekly-difficulty-summary` | Envia resumo semanal; exige `X-Cron-Secret` |
 
@@ -154,6 +162,7 @@ As regras são verificadas na API e também no banco com políticas RLS. Assim, 
    - `supabase/migrations/20260906120000_harden_authorization.sql`
    - `supabase/migrations/20260908150000_teacher_subject_alerts.sql`
    - `supabase/migrations/20260908170000_student_gamification.sql`
+   - `supabase/migrations/20260909120000_teacher_dashboard.sql`
 3. Crie sua primeira conta pela interface.
 4. No SQL Editor, promova somente essa conta inicial:
 

@@ -18,7 +18,7 @@ from typing import Annotated, Any
 from zoneinfo import ZoneInfo
 
 from dotenv import load_dotenv
-from fastapi import Depends, FastAPI, Header, HTTPException
+from fastapi import Depends, FastAPI, Header, HTTPException, Response
 from fastapi.middleware.cors import CORSMiddleware
 from openai import OpenAI
 from pydantic import BaseModel, Field, field_validator, model_validator
@@ -32,6 +32,12 @@ from difficulty_alerts import (
     is_valid_cron_secret,
 )
 from gamification import build_gamification_summary, calculate_current_streak
+from teacher_dashboard import (
+    build_difficulty_trend,
+    build_report_csv,
+    difficulty_label,
+    parse_content_import,
+)
 
 # Carrega somente variáveis locais; o arquivo .env fica fora do Git.
 load_dotenv()
@@ -44,7 +50,7 @@ app.add_middleware(
     CORSMiddleware,
     allow_origins=[os.getenv("FRONTEND_URL", "http://localhost:5173")],
     allow_credentials=True,
-    allow_methods=["GET", "POST", "OPTIONS"],
+    allow_methods=["GET", "POST", "DELETE", "OPTIONS"],
     allow_headers=["Authorization", "Content-Type"],
 )
 
@@ -61,6 +67,20 @@ QUESTION_SCHEMA = {
         "skill": {"type": "string"},
     },
     "required": ["question", "options", "correct_index", "explanation", "skill"],
+}
+
+# A recomendação estruturada reduz respostas vagas e mantém o retorno previsível
+# para os cartões do painel do professor.
+RECOMMENDATION_SCHEMA = {
+    "type": "object",
+    "additionalProperties": False,
+    "properties": {
+        "diagnosis": {"type": "string"},
+        "objective": {"type": "string"},
+        "actions": {"type": "array", "items": {"type": "string"}, "minItems": 3, "maxItems": 5},
+        "content_suggestion": {"type": "string"},
+    },
+    "required": ["diagnosis", "objective", "actions", "content_suggestion"],
 }
 
 # As questões iniciais mantêm o protótipo utilizável sem banco ou OpenAI.
@@ -121,6 +141,60 @@ class AnswerRequest(BaseModel):
 
     selected_index: int = Field(ge=0, le=3)
     response_time_seconds: int = Field(default=0, ge=0, le=7200)
+
+
+class TeacherClassCreate(BaseModel):
+    """Informações curtas para criar uma turma da disciplina do professor."""
+
+    name: str = Field(min_length=2, max_length=80)
+    school_year: str = Field(min_length=2, max_length=30)
+
+    @field_validator("name", "school_year")
+    @classmethod
+    def clean_class_text(cls, value: str) -> str:
+        return sanitize_prompt_value(value, max_length=80)
+
+
+class ClassStudentCreate(BaseModel):
+    """O e-mail evita que o professor precise conhecer IDs internos."""
+
+    student_email: str = Field(min_length=5, max_length=254, pattern=r"^[^@\s]+@[^@\s]+\.[^@\s]+$")
+
+
+class TeacherContentCreate(BaseModel):
+    """Conteúdo criado pelo professor somente para a própria disciplina."""
+
+    title: str = Field(min_length=2, max_length=120)
+    description: str = Field(default="", max_length=1000)
+    content_type: str = Field(default="lesson", pattern="^(lesson|exercise|video|link)$")
+    source_url: str = Field(default="", max_length=500)
+
+    @field_validator("title")
+    @classmethod
+    def clean_content_title(cls, value: str) -> str:
+        return sanitize_prompt_value(value, max_length=120)
+
+    @field_validator("source_url")
+    @classmethod
+    def validate_source_url(cls, value: str) -> str:
+        normalized = value.strip()
+        if normalized and not normalized.startswith(("https://", "http://")):
+            raise ValueError("O link precisa usar HTTP ou HTTPS.")
+        return normalized
+
+
+class TeacherContentImport(BaseModel):
+    """Arquivo já lido pelo navegador, com tamanho limitado pelo backend."""
+
+    format: str = Field(pattern="^(json|csv)$")
+    content: str = Field(min_length=2, max_length=100_000)
+
+
+class RecommendationRequest(BaseModel):
+    """Escolhe a turma e, opcionalmente, um estudante dentro dela."""
+
+    class_id: str = Field(min_length=36, max_length=36)
+    student_id: str | None = Field(default=None, min_length=36, max_length=36)
 
 
 def supabase_configured() -> bool:
@@ -264,6 +338,10 @@ def require_role(*roles: str):
     return dependency
 
 
+# O alias deixa explícito que as rotas abaixo compartilham a mesma barreira.
+TeacherUser = Annotated[dict[str, Any], Depends(require_role("teacher"))]
+
+
 def openai_client() -> OpenAI:
     """Entrega o cliente OpenAI apenas quando a chave está configurada."""
 
@@ -386,6 +464,123 @@ def hide_question_solution(question: dict[str, Any]) -> dict[str, Any]:
     return {key: value for key, value in question.items() if key not in {"correct_index", "explanation"}}
 
 
+def teacher_assignment(db: Client, teacher_id: str) -> dict[str, str]:
+    """Localiza a única disciplina atribuída ao professor autenticado."""
+
+    rows = (
+        db.table("teacher_subjects")
+        .select("subject_id,subjects(name)")
+        .eq("teacher_id", teacher_id)
+        .limit(1)
+        .execute()
+        .data
+    )
+    if not rows:
+        raise HTTPException(status_code=409, detail="Professor ainda não possui disciplina atribuída.")
+    return {
+        "subject_id": rows[0]["subject_id"],
+        "subject": (rows[0].get("subjects") or {}).get("name", "Disciplina"),
+    }
+
+
+def owned_teacher_class(db: Client, teacher_id: str, class_id: str) -> dict[str, Any]:
+    """Impede que trocar o ID da URL abra a turma de outro professor."""
+
+    rows = (
+        db.table("classes")
+        .select("id,name,school_year,subject_id,subjects(name)")
+        .eq("id", class_id)
+        .eq("teacher_id", teacher_id)
+        .limit(1)
+        .execute()
+        .data
+    )
+    if not rows:
+        raise HTTPException(status_code=404, detail="Turma não encontrada.")
+    return rows[0]
+
+
+def teacher_student_summaries(db: Client, subject_id: str, student_ids: list[str]) -> list[dict[str, Any]]:
+    """Junta desempenho da disciplina sem permitir alterações nos dados do aluno."""
+
+    if not student_ids:
+        return []
+    profiles = db.table("profiles").select("id,full_name,grade,email").in_("id", student_ids).execute().data
+    questions = db.table("questions").select("id,topic").eq("subject_id", subject_id).limit(5000).execute().data
+    question_ids = [row["id"] for row in questions]
+    topics_by_question = {row["id"]: row["topic"] for row in questions}
+    attempts = []
+    if question_ids:
+        attempts = (
+            db.table("question_attempts")
+            .select("student_id,question_id,correct,response_time_seconds,answered_at")
+            .in_("student_id", student_ids)
+            .in_("question_id", question_ids)
+            .order("answered_at", desc=True)
+            .limit(10000)
+            .execute()
+            .data
+        )
+    modules = db.table("modules").select("id").eq("subject_id", subject_id).execute().data
+    module_ids = [row["id"] for row in modules]
+    lessons = db.table("lessons").select("id").in_("module_id", module_ids).execute().data if module_ids else []
+    lesson_ids = [row["id"] for row in lessons]
+    progress = []
+    if lesson_ids:
+        progress = (
+            db.table("lesson_progress")
+            .select("student_id,time_seconds,completed,last_accessed_at")
+            .in_("student_id", student_ids)
+            .in_("lesson_id", lesson_ids)
+            .limit(10000)
+            .execute()
+            .data
+        )
+    difficulties = (
+        db.table("student_difficulties")
+        .select("student_id,topic,accuracy,attempts,level,updated_at")
+        .in_("student_id", student_ids)
+        .eq("subject_id", subject_id)
+        .limit(5000)
+        .execute()
+        .data
+    )
+
+    attempts_by_student: dict[str, list[dict[str, Any]]] = defaultdict(list)
+    progress_by_student: dict[str, list[dict[str, Any]]] = defaultdict(list)
+    difficulty_by_student: dict[str, list[dict[str, Any]]] = defaultdict(list)
+    for row in attempts:
+        row["topic"] = topics_by_question.get(row["question_id"], "Conteúdo")
+        attempts_by_student[row["student_id"]].append(row)
+    for row in progress:
+        progress_by_student[row["student_id"]].append(row)
+    for row in difficulties:
+        difficulty_by_student[row["student_id"]].append(row)
+
+    summaries = []
+    for profile in profiles:
+        student_attempts = attempts_by_student[profile["id"]]
+        attempt_count = len(student_attempts)
+        correct = sum(1 for row in student_attempts if row["correct"])
+        accuracy = round(correct / attempt_count * 100, 1) if attempt_count else 0
+        lesson_seconds = sum(int(row.get("time_seconds", 0)) for row in progress_by_student[profile["id"]])
+        answer_seconds = sum(int(row.get("response_time_seconds", 0)) for row in student_attempts)
+        summaries.append(
+            {
+                **profile,
+                "accuracy": accuracy,
+                "attempts": attempt_count,
+                "difficulty": difficulty_label(accuracy, attempt_count),
+                "time_minutes": round((lesson_seconds + answer_seconds) / 60),
+                "completed_lessons": sum(1 for row in progress_by_student[profile["id"]] if row.get("completed")),
+                "difficulties": difficulty_by_student[profile["id"]],
+                "trend": build_difficulty_trend(student_attempts),
+                "recent_attempts": student_attempts[:12],
+            }
+        )
+    return sorted(summaries, key=lambda item: item["full_name"].casefold())
+
+
 @app.get("/health")
 def health(_user: dict = Depends(current_user)):
     """Informa se os serviços essenciais estão configurados, sem expor chaves."""
@@ -422,7 +617,7 @@ def list_questions(subject: str | None = None, difficulty: str | None = None, us
 
 
 @app.post("/question-bank/generate")
-def generate_question(request: QuestionRequest, user: dict = Depends(require_role("teacher"))):
+def generate_question(request: QuestionRequest, user: TeacherUser):
     """Gera com IA e persiste a nova questão quando existe banco configurado."""
 
     if not supabase_configured():
@@ -576,7 +771,7 @@ def student_gamification(user: dict = Depends(require_role("student"))):
 
 
 @app.get("/teacher/students")
-def teacher_students(user: dict = Depends(require_role("teacher"))):
+def teacher_students(user: TeacherUser):
     """Lista apenas estudantes matriculados na disciplina do professor atual."""
 
     if not supabase_configured():
@@ -596,7 +791,7 @@ def teacher_students(user: dict = Depends(require_role("teacher"))):
 
 
 @app.get("/teacher/difficulty-alerts")
-def teacher_difficulty_alerts(user: dict = Depends(require_role("teacher"))):
+def teacher_difficulty_alerts(user: TeacherUser):
     """Devolve ao professor somente alertas ativos da própria disciplina."""
 
     if not supabase_configured():
@@ -632,6 +827,302 @@ def teacher_difficulty_alerts(user: dict = Depends(require_role("teacher"))):
         }
         for alert in alerts
     ]
+
+
+@app.get("/teacher/overview")
+def teacher_overview(user: TeacherUser):
+    """Entrega os indicadores principais somente da disciplina atribuída."""
+
+    db = database()
+    assignment = teacher_assignment(db, user["id"])
+    classes = db.table("classes").select("id").eq("teacher_id", user["id"]).execute().data
+    class_ids = [row["id"] for row in classes]
+    memberships = db.table("class_students").select("student_id").in_("class_id", class_ids).execute().data if class_ids else []
+    student_ids = list({row["student_id"] for row in memberships})
+    summaries = teacher_student_summaries(db, assignment["subject_id"], student_ids)
+    attempts = sum(student["attempts"] for student in summaries)
+    weighted_accuracy = round(
+        sum(student["accuracy"] * student["attempts"] for student in summaries) / attempts,
+        1,
+    ) if attempts else 0
+    alert_count = (
+        db.table("difficulty_alerts")
+        .select("id", count="exact")
+        .eq("teacher_id", user["id"])
+        .eq("subject_id", assignment["subject_id"])
+        .eq("status", "active")
+        .execute()
+        .count
+        or 0
+    )
+    return {
+        "subject": assignment["subject"],
+        "class_count": len(classes),
+        "student_count": len(student_ids),
+        "active_alerts": alert_count,
+        "average_accuracy": weighted_accuracy,
+    }
+
+
+@app.get("/teacher/classes")
+def list_teacher_classes(user: TeacherUser):
+    """Lista apenas turmas criadas pelo professor atual."""
+
+    db = database()
+    assignment = teacher_assignment(db, user["id"])
+    classes = (
+        db.table("classes")
+        .select("id,name,school_year,created_at")
+        .eq("teacher_id", user["id"])
+        .eq("subject_id", assignment["subject_id"])
+        .order("created_at")
+        .execute()
+        .data
+    )
+    class_ids = [row["id"] for row in classes]
+    memberships = db.table("class_students").select("class_id").in_("class_id", class_ids).execute().data if class_ids else []
+    counts: dict[str, int] = defaultdict(int)
+    for membership in memberships:
+        counts[membership["class_id"]] += 1
+    return [{**row, "subject": assignment["subject"], "student_count": counts[row["id"]]} for row in classes]
+
+
+@app.post("/teacher/classes", status_code=201)
+def create_teacher_class(payload: TeacherClassCreate, user: TeacherUser):
+    """Cria uma turma já presa à disciplina do professor autenticado."""
+
+    db = database()
+    assignment = teacher_assignment(db, user["id"])
+    duplicate = (
+        db.table("classes")
+        .select("id")
+        .eq("teacher_id", user["id"])
+        .eq("name", payload.name)
+        .eq("school_year", payload.school_year)
+        .limit(1)
+        .execute()
+        .data
+    )
+    if duplicate:
+        raise HTTPException(status_code=409, detail="Já existe uma turma com esse nome e ano.")
+    created = (
+        db.table("classes")
+        .insert(
+            {
+                "teacher_id": user["id"],
+                "subject_id": assignment["subject_id"],
+                "name": payload.name,
+                "school_year": payload.school_year,
+            }
+        )
+        .execute()
+        .data[0]
+    )
+    return {**created, "subject": assignment["subject"], "student_count": 0}
+
+
+@app.get("/teacher/classes/{class_id}")
+def teacher_class_detail(class_id: str, user: TeacherUser):
+    """Mostra estudantes e indicadores da turma, sempre em modo somente leitura."""
+
+    db = database()
+    classroom = owned_teacher_class(db, user["id"], class_id)
+    memberships = db.table("class_students").select("student_id").eq("class_id", class_id).execute().data
+    students = teacher_student_summaries(db, classroom["subject_id"], [row["student_id"] for row in memberships])
+    class_attempts = [attempt for student in students for attempt in student["recent_attempts"]]
+    return {
+        "id": classroom["id"],
+        "name": classroom["name"],
+        "school_year": classroom["school_year"],
+        "subject": (classroom.get("subjects") or {}).get("name", "Disciplina"),
+        "students": students,
+        "trend": build_difficulty_trend(class_attempts),
+    }
+
+
+@app.post("/teacher/classes/{class_id}/students", status_code=201)
+def add_class_student(class_id: str, payload: ClassStudentCreate, user: TeacherUser):
+    """Organiza a turma sem dar acesso para editar qualquer dado pedagógico."""
+
+    db = database()
+    classroom = owned_teacher_class(db, user["id"], class_id)
+    profiles = (
+        db.table("profiles")
+        .select("id,full_name,grade,email,role")
+        .eq("email", payload.student_email.lower())
+        .eq("role", "student")
+        .limit(1)
+        .execute()
+        .data
+    )
+    if not profiles:
+        raise HTTPException(status_code=404, detail="Estudante não encontrado.")
+    student = profiles[0]
+    enrollment = (
+        db.table("enrollments")
+        .select("student_id")
+        .eq("student_id", student["id"])
+        .eq("subject_id", classroom["subject_id"])
+        .limit(1)
+        .execute()
+        .data
+    )
+    if not enrollment:
+        raise HTTPException(status_code=409, detail="Estudante não está matriculado nesta disciplina.")
+    existing = db.table("class_students").select("student_id").eq("class_id", class_id).eq("student_id", student["id"]).limit(1).execute().data
+    if existing:
+        raise HTTPException(status_code=409, detail="Estudante já participa desta turma.")
+    db.table("class_students").insert({"class_id": class_id, "student_id": student["id"]}).execute()
+    return {"id": student["id"], "full_name": student["full_name"], "grade": student["grade"]}
+
+
+@app.delete("/teacher/classes/{class_id}/students/{student_id}", status_code=204)
+def remove_class_student(class_id: str, student_id: str, user: TeacherUser):
+    """Remove só o vínculo com a turma; histórico e perfil ficam intactos."""
+
+    db = database()
+    owned_teacher_class(db, user["id"], class_id)
+    membership = db.table("class_students").select("student_id").eq("class_id", class_id).eq("student_id", student_id).limit(1).execute().data
+    if not membership:
+        raise HTTPException(status_code=404, detail="Estudante não está nesta turma.")
+    db.table("class_students").delete().eq("class_id", class_id).eq("student_id", student_id).execute()
+    return Response(status_code=204)
+
+
+@app.get("/teacher/classes/{class_id}/students/{student_id}/history")
+def teacher_student_history(class_id: str, student_id: str, user: TeacherUser):
+    """Fecha a rota por turma e estudante antes de devolver qualquer histórico."""
+
+    db = database()
+    classroom = owned_teacher_class(db, user["id"], class_id)
+    membership = db.table("class_students").select("student_id").eq("class_id", class_id).eq("student_id", student_id).limit(1).execute().data
+    if not membership:
+        raise HTTPException(status_code=404, detail="Estudante não encontrado nesta turma.")
+    summaries = teacher_student_summaries(db, classroom["subject_id"], [student_id])
+    if not summaries:
+        raise HTTPException(status_code=404, detail="Estudante não encontrado.")
+    return summaries[0]
+
+
+@app.get("/teacher/reports/export")
+def export_teacher_report(class_id: str, user: TeacherUser):
+    """Exporta CSV da turma autorizada com proteção contra fórmulas maliciosas."""
+
+    db = database()
+    classroom = owned_teacher_class(db, user["id"], class_id)
+    memberships = db.table("class_students").select("student_id").eq("class_id", class_id).execute().data
+    students = teacher_student_summaries(db, classroom["subject_id"], [row["student_id"] for row in memberships])
+    subject_name = (classroom.get("subjects") or {}).get("name", "Disciplina")
+    filename = re.sub(r"[^A-Za-z0-9_-]", "-", classroom["name"]).strip("-") or "turma"
+    content = "\ufeff" + build_report_csv(subject_name, classroom["name"], students)
+    return Response(
+        content=content,
+        media_type="text/csv; charset=utf-8",
+        headers={"Content-Disposition": f'attachment; filename="relatorio-{filename}.csv"'},
+    )
+
+
+@app.get("/teacher/contents")
+def list_teacher_contents(user: TeacherUser):
+    """Lista materiais cadastrados somente pelo professor atual."""
+
+    db = database()
+    assignment = teacher_assignment(db, user["id"])
+    return (
+        db.table("learning_contents")
+        .select("id,title,description,content_type,source_url,created_at")
+        .eq("teacher_id", user["id"])
+        .eq("subject_id", assignment["subject_id"])
+        .order("created_at", desc=True)
+        .limit(200)
+        .execute()
+        .data
+    )
+
+
+@app.post("/teacher/contents", status_code=201)
+def create_teacher_content(payload: TeacherContentCreate, user: TeacherUser):
+    """Cria material na disciplina atribuída, ignorando qualquer matéria do cliente."""
+
+    db = database()
+    assignment = teacher_assignment(db, user["id"])
+    return (
+        db.table("learning_contents")
+        .insert({"teacher_id": user["id"], "subject_id": assignment["subject_id"], **payload.model_dump()})
+        .execute()
+        .data[0]
+    )
+
+
+@app.post("/teacher/contents/import", status_code=201)
+def import_teacher_contents(payload: TeacherContentImport, user: TeacherUser):
+    """Importa lotes pequenos e validados, sem aceitar arquivos executáveis."""
+
+    try:
+        rows = parse_content_import(payload.content, payload.format)
+    except (ValueError, json.JSONDecodeError) as error:
+        raise HTTPException(status_code=422, detail=str(error)) from error
+    db = database()
+    assignment = teacher_assignment(db, user["id"])
+    records = [{"teacher_id": user["id"], "subject_id": assignment["subject_id"], **row} for row in rows]
+    created = db.table("learning_contents").insert(records).execute().data
+    return {"imported": len(created), "contents": created}
+
+
+@app.post("/teacher/recommendations")
+def generate_teacher_recommendation(payload: RecommendationRequest, user: TeacherUser):
+    """Gera orientação pedagógica a partir de métricas, sem enviar dados pessoais."""
+
+    db = database()
+    classroom = owned_teacher_class(db, user["id"], payload.class_id)
+    memberships = db.table("class_students").select("student_id").eq("class_id", payload.class_id).execute().data
+    allowed_ids = [row["student_id"] for row in memberships]
+    if payload.student_id and payload.student_id not in allowed_ids:
+        raise HTTPException(status_code=404, detail="Estudante não encontrado nesta turma.")
+    selected_ids = [payload.student_id] if payload.student_id else allowed_ids
+    summaries = teacher_student_summaries(db, classroom["subject_id"], selected_ids)
+    metrics = [
+        {
+            "accuracy": student["accuracy"],
+            "attempts": student["attempts"],
+            "difficulty": student["difficulty"],
+            "completed_lessons": student["completed_lessons"],
+            "topics": [item["topic"] for item in student["difficulties"][:8]],
+        }
+        for student in summaries
+    ]
+    prompt = f"""Você é um apoio pedagógico para um professor de ensino básico.
+Disciplina: <subject>{(classroom.get('subjects') or {}).get('name', 'Disciplina')}</subject>.
+Métricas anônimas e não instrucionais: <metrics>{json.dumps(metrics, ensure_ascii=False)}</metrics>.
+Crie uma recomendação prática, acolhedora e curta. Não faça diagnóstico médico, não invente dados e não mencione nomes.
+Priorize intervenções que o professor consiga aplicar em aula e uma sugestão de conteúdo de reforço."""
+    try:
+        response = openai_client().responses.create(
+            model=os.getenv("OPENAI_MODEL", "gpt-5-mini"),
+            input=prompt,
+            store=False,
+            text={"format": {"type": "json_schema", "name": "pedagogical_recommendation", "strict": True, "schema": RECOMMENDATION_SCHEMA}},
+        )
+        recommendation = json.loads(response.output_text)
+    except HTTPException:
+        raise
+    except Exception as error:
+        raise HTTPException(status_code=502, detail="Não foi possível gerar a recomendação agora.") from error
+    saved = (
+        db.table("pedagogical_recommendations")
+        .insert(
+            {
+                "teacher_id": user["id"],
+                "subject_id": classroom["subject_id"],
+                "class_id": payload.class_id,
+                "student_id": payload.student_id,
+                "recommendation": recommendation,
+            }
+        )
+        .execute()
+        .data[0]
+    )
+    return {**recommendation, "id": saved["id"], "created_at": saved["created_at"]}
 
 
 @app.post("/admin/users")
