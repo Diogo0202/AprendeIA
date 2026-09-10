@@ -53,7 +53,7 @@ AprendeIA/
 
 Os comentários explicam as escolhas que realmente importam: login, permissões, fluxo das telas e adaptação das questões. Para entender o panorama do projeto, veja [docs/ARQUITETURA.md](docs/ARQUITETURA.md).
 
-Para usar modelos locais e dividir tarefas entre IAs, consulte o [guia de modelos Ollama](docs/OLLAMA_MODELOS.md). 🤖 A regra de XP, níveis e insígnias está explicada em [docs/GAMIFICACAO.md](docs/GAMIFICACAO.md), e a área docente em [docs/PAINEL_PROFESSOR.md](docs/PAINEL_PROFESSOR.md).
+A regra de XP, níveis e insígnias está explicada em [docs/GAMIFICACAO.md](docs/GAMIFICACAO.md), e a área docente em [docs/PAINEL_PROFESSOR.md](docs/PAINEL_PROFESSOR.md).
 
 Arquivos gerados automaticamente, como `package-lock.json`, ficam sem comentários para não quebrar seu formato. As versões das dependências continuam fixas para o projeto se comportar igual em outras máquinas.
 
