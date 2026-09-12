@@ -23,7 +23,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from openai import OpenAI
 from pydantic import BaseModel, Field, field_validator, model_validator
 from supabase import Client, create_client
-from supabase.lib.client_options import ClientOptions
+from supabase.lib.client_options import SyncClientOptions
 
 from difficulty_alerts import (
     build_immediate_email,
@@ -119,6 +119,19 @@ class UserCreate(BaseModel):
         if self.role == "student" and self.subject:
             raise ValueError("Estudante não recebe disciplina no cadastro.")
         return self
+
+
+class TeacherApproval(BaseModel):
+    """Disciplina confirmada pela administradora ao liberar uma solicitação."""
+
+    subject: str = Field(min_length=2, max_length=60)
+
+    @field_validator("subject")
+    @classmethod
+    def validate_subject(cls, value: str) -> str:
+        """Usa o mesmo cuidado dos outros textos antes de consultar o banco."""
+
+        return sanitize_prompt_value(value, max_length=60)
 
 
 class QuestionRequest(BaseModel):
@@ -237,7 +250,9 @@ def database() -> Client:
     return create_client(
         os.environ["SUPABASE_URL"],
         os.environ["SUPABASE_SECRET_KEY"],
-        options=ClientOptions(auto_refresh_token=False, persist_session=False),
+        # O backend usa o cliente síncrono do Supabase. A opção base não possui
+        # o armazenamento esperado e só falha quando a primeira consulta real acontece.
+        options=SyncClientOptions(auto_refresh_token=False, persist_session=False),
     )
 
 
@@ -935,6 +950,7 @@ def teacher_class_detail(class_id: str, user: TeacherUser):
         "name": classroom["name"],
         "school_year": classroom["school_year"],
         "subject": (classroom.get("subjects") or {}).get("name", "Disciplina"),
+        "student_count": len(students),
         "students": students,
         "trend": build_difficulty_trend(class_attempts),
     }
@@ -1123,6 +1139,72 @@ Priorize intervenções que o professor consiga aplicar em aula e uma sugestão 
         .data[0]
     )
     return {**recommendation, "id": saved["id"], "created_at": saved["created_at"]}
+
+
+@app.get("/admin/teacher-requests")
+def list_teacher_registration_requests(_admin: dict = Depends(require_role("admin"))):
+    """Lista solicitações sem expor senhas, tokens ou metadados de autenticação."""
+
+    if not supabase_configured():
+        return []
+    return (
+        database()
+        .table("profiles")
+        .select("id,email,full_name,requested_subject,created_at")
+        .eq("requested_role", "teacher")
+        .eq("registration_status", "pending_teacher")
+        .order("created_at")
+        .limit(100)
+        .execute()
+        .data
+    )
+
+
+@app.post("/admin/teacher-requests/{user_id}/approve")
+def approve_teacher_registration(
+    user_id: uuid.UUID,
+    payload: TeacherApproval,
+    _admin: dict = Depends(require_role("admin")),
+):
+    """Promove a solicitação em uma transação que também prende a disciplina."""
+
+    db = database()
+    request_rows = (
+        db.table("profiles")
+        .select("id,email,full_name,registration_status")
+        .eq("id", str(user_id))
+        .eq("requested_role", "teacher")
+        .eq("registration_status", "pending_teacher")
+        .limit(1)
+        .execute()
+        .data
+    )
+    if not request_rows:
+        raise HTTPException(status_code=404, detail="Solicitação de professor não encontrada.")
+
+    subject_rows = db.table("subjects").select("id").eq("name", payload.subject).limit(1).execute().data
+    if not subject_rows:
+        raise HTTPException(status_code=404, detail="Disciplina não encontrada.")
+    assigned = db.table("teacher_subjects").select("teacher_id").eq("subject_id", subject_rows[0]["id"]).limit(1).execute().data
+    if assigned:
+        raise HTTPException(status_code=409, detail="Esta disciplina já possui professor.")
+
+    try:
+        # A função SQL atualiza perfil e vínculo juntos. Assim não sobra uma conta
+        # de professor sem matéria se duas aprovações acontecerem ao mesmo tempo.
+        approved = (
+            db.rpc(
+                "approve_teacher_registration",
+                {"target_user_id": str(user_id), "approved_subject_name": payload.subject},
+            )
+            .execute()
+            .data
+        )
+    except Exception as error:
+        raise HTTPException(status_code=409, detail="Não foi possível aprovar esta solicitação.") from error
+    if not approved:
+        raise HTTPException(status_code=409, detail="Não foi possível aprovar esta solicitação.")
+    return approved[0]
 
 
 @app.post("/admin/users")

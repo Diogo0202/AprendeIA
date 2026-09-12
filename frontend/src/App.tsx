@@ -2,8 +2,9 @@ import { CSSProperties, FormEvent, useEffect, useState } from "react";
 import { accessToken, apiUrl, isSupabaseConfigured, supabase } from "./lib/supabase";
 
 // As visualizações funcionam como uma navegação leve para este protótipo.
-type View = "login" | "signup" | "student" | "teacher" | "admin" | "practice";
+type View = "login" | "signup" | "student" | "teacher" | "teacher-pending" | "admin" | "practice";
 type Role = "student" | "teacher" | "admin";
+type SignupRole = Extract<Role, "student" | "teacher">;
 type UserProfile = {
   id?: string;
   name: string;
@@ -11,6 +12,8 @@ type UserProfile = {
   grade: string;
   goal: string;
   role: Role;
+  registrationStatus?: "active" | "pending_teacher";
+  requestedSubject?: string;
 };
 
 // Dados de demonstração permitem apresentar o TCC sem serviços externos.
@@ -223,6 +226,14 @@ type TeacherAlert = {
   status: "active" | "resolved";
 };
 
+type TeacherRegistrationRequest = {
+  id: string;
+  full_name: string;
+  email: string;
+  requested_subject: string;
+  created_at: string;
+};
+
 // O modo local continua útil para apresentar o TCC, mas não cria permissões reais.
 const demoTeacherStudents: TeacherStudent[] = [
   {
@@ -293,6 +304,16 @@ const demoTeacherClasses: TeacherClass[] = [
     trend: [],
   },
 ];
+
+const emptyTeacherClass: TeacherClass = {
+  id: "",
+  name: "Nenhuma turma selecionada",
+  school_year: "",
+  subject: "",
+  student_count: 0,
+  students: [],
+  trend: [],
+};
 
 const demoTeacherContents: TeacherContent[] = [
   {
@@ -367,7 +388,7 @@ export default function App() {
     setAuthLoading(true);
     const { data, error } = await supabase
       .from("profiles")
-      .select("id,email,full_name,role,grade,goal")
+      .select("id,email,full_name,role,grade,goal,registration_status,requested_subject")
       .eq("id", userId)
       .single();
     if (error || !data) {
@@ -390,8 +411,10 @@ export default function App() {
       grade: data.grade,
       goal: data.goal,
       role,
+      registrationStatus: data.registration_status,
+      requestedSubject: data.requested_subject || undefined,
     });
-    enter(role);
+    setView(data.registration_status === "pending_teacher" ? "teacher-pending" : role);
     setAuthMessage("");
     setAuthLoading(false);
   }
@@ -420,22 +443,26 @@ export default function App() {
     }
   }
 
-  /** Cria apenas estudantes; professores são cadastrados pela administradora. */
+  /** Mantém professor como solicitação até a administradora confirmar a disciplina. */
   async function handleSignup(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     const data = new FormData(event.currentTarget);
     setAuthMessage("");
     setAuthLoading(true);
+    const requestedRole = String(data.get("role") || "student") as SignupRole;
+    const requestedSubject = String(data.get("subject") || "");
     const nextProfile: UserProfile = {
       name: String(data.get("name") || initialProfile.name),
       email: String(data.get("email") || initialProfile.email),
-      grade: String(data.get("grade") || "Ensino Médio"),
+      grade: requestedRole === "student" ? String(data.get("grade") || "Ensino Médio") : "Professor",
       goal: "Reforçar meus estudos",
-      role: "student",
+      role: requestedRole,
     };
     if (!supabase) {
+      // No modo de apresentação não existe permissão real; o atalho serve apenas
+      // para conferir a experiência de cada perfil no navegador local.
       setProfile(nextProfile);
-      setView("student");
+      setView(requestedRole);
       setAuthLoading(false);
       return;
     }
@@ -443,11 +470,25 @@ export default function App() {
       email: nextProfile.email,
       password: String(data.get("password")),
       options: {
-        data: { full_name: nextProfile.name, grade: nextProfile.grade },
+        data: {
+          full_name: nextProfile.name,
+          grade: nextProfile.grade,
+          requested_role: requestedRole === "teacher" ? "teacher" : undefined,
+          requested_subject: requestedRole === "teacher" ? requestedSubject : undefined,
+        },
       },
     });
     if (error) {
       setAuthMessage(error.message);
+      setAuthLoading(false);
+      return;
+    }
+    if (requestedRole === "teacher") {
+      // Mesmo quando a confirmação de e-mail está desativada, a pessoa não fica
+      // autenticada como estudante enquanto aguarda a análise do cadastro.
+      if (signUpData.session) await supabase.auth.signOut();
+      setAuthMessage("Solicitação de professor enviada. Após a aprovação da administradora, entre com este e-mail e senha.");
+      setView("login");
       setAuthLoading(false);
       return;
     }
@@ -500,6 +541,12 @@ export default function App() {
     ) : (
       <AccessDenied onLogout={logout} />
     );
+  if (view === "teacher-pending")
+    return profile.registrationStatus === "pending_teacher" ? (
+      <TeacherPending profile={profile} onLogout={logout} />
+    ) : (
+      <AccessDenied onLogout={logout} />
+    );
   if (view === "admin")
     return profile.role === "admin" ? (
       <AdminProfile onLogout={logout} />
@@ -541,6 +588,28 @@ function AccessDenied({ onLogout }: { onLogout: () => void }) {
         <p className="subtitle">
           Sua sessão continua protegida. Saia e entre com uma conta autorizada.
         </p>
+      </section>
+    </main>
+  );
+}
+
+/** Explica o próximo passo sem liberar ferramentas docentes antes da aprovação. */
+function TeacherPending({ profile, onLogout }: { profile: UserProfile; onLogout: () => void }) {
+  return (
+    <main className="profile-page">
+      <Header area="CADASTRO DE PROFESSOR" onLogout={onLogout} />
+      <section className="profile-content narrow pending-teacher-page">
+        <span className="pending-seal" aria-hidden="true">P</span>
+        <p className="eyebrow">SOLICITAÇÃO RECEBIDA</p>
+        <h1>Seu espaço docente está quase pronto.</h1>
+        <p className="subtitle">
+          A administradora precisa confirmar seu cadastro em {profile.requestedSubject || "sua disciplina"}. Depois disso, este mesmo login abre o painel de turmas, conteúdos e relatórios.
+        </p>
+        <div className="pending-steps" aria-label="Etapas do cadastro de professor">
+          <span className="done"><strong>1</strong> Solicitação enviada</span>
+          <span className="current"><strong>2</strong> Validação da disciplina</span>
+          <span><strong>3</strong> Painel liberado</span>
+        </div>
       </section>
     </main>
   );
@@ -654,7 +723,7 @@ function Login({
   );
 }
 
-/** Cadastro público deliberadamente limitado ao papel de estudante. */
+/** Separa a jornada de estudante da solicitação docente sem confiar no navegador. */
 function Signup({
   onSubmit,
   onLogin,
@@ -666,36 +735,82 @@ function Signup({
   message: string;
   loading: boolean;
 }) {
+  const [selectedRole, setSelectedRole] = useState<SignupRole>("student");
+
   return (
     <>
       <h1>Crie sua conta</h1>
       <p className="subtitle">
-        Novos cadastros são criados com o perfil de estudante.
+        {selectedRole === "student"
+          ? "Comece sua jornada e acompanhe seu progresso em cada matéria."
+          : "Solicite seu acesso para acompanhar uma disciplina e suas turmas."}
       </p>
       <form onSubmit={onSubmit} className="auth-form">
+        <fieldset className="account-type-picker">
+          <legend>COMO VOCÊ VAI USAR O APRENDEIA?</legend>
+          <label className={selectedRole === "student" ? "account-type active" : "account-type"}>
+            <input
+              type="radio"
+              name="role"
+              value="student"
+              checked={selectedRole === "student"}
+              onChange={() => setSelectedRole("student")}
+            />
+            <span aria-hidden="true">A</span>
+            <strong>Aluno</strong>
+            <small>Estudar e praticar</small>
+          </label>
+          <label className={selectedRole === "teacher" ? "account-type active" : "account-type"}>
+            <input
+              type="radio"
+              name="role"
+              value="teacher"
+              checked={selectedRole === "teacher"}
+              onChange={() => setSelectedRole("teacher")}
+            />
+            <span aria-hidden="true">P</span>
+            <strong>Professor</strong>
+            <small>Gerenciar turmas</small>
+          </label>
+        </fieldset>
         <label>
           NOME COMPLETO
-          <input name="name" placeholder="Ex: Maria Silva" required />
+          <input name="name" placeholder="Ex: Maria Silva" autoComplete="name" required />
         </label>
-        <label>
-          GRAU DE ESCOLARIDADE
-          <select name="grade" defaultValue="">
-            <option value="" disabled>
-              Selecione...
-            </option>
-            <option>Ensino Fundamental I</option>
-            <option>Ensino Fundamental II</option>
-            <option>Ensino Médio</option>
-            <option>Graduação</option>
-            <option>Pós-Graduação</option>
-          </select>
-        </label>
+        {selectedRole === "student" ? (
+          <label>
+            GRAU DE ESCOLARIDADE
+            <select name="grade" defaultValue="" required>
+              <option value="" disabled>
+                Selecione...
+              </option>
+              <option>Ensino Fundamental I</option>
+              <option>Ensino Fundamental II</option>
+              <option>Ensino Médio</option>
+              <option>Graduação</option>
+              <option>Pós-Graduação</option>
+            </select>
+          </label>
+        ) : (
+          <label>
+            DISCIPLINA
+            <select name="subject" defaultValue="" required>
+              <option value="" disabled>
+                Selecione sua disciplina...
+              </option>
+              {subjects.map((subject) => (
+                <option key={subject.name} value={subject.name}>{subject.name}</option>
+              ))}
+            </select>
+          </label>
+        )}
         <label>
           E-MAIL
           <input
             name="email"
             type="email"
             placeholder="seuemail@exemplo.com"
+            autoComplete="email"
             required
           />
         </label>
@@ -705,17 +820,27 @@ function Signup({
             name="password"
             type="password"
             placeholder="Crie uma senha"
+            autoComplete="new-password"
             required
             minLength={8}
           />
         </label>
+        {selectedRole === "teacher" && (
+          <p className="registration-note">
+            Seu painel é liberado depois que a administradora confirma o cadastro e a disciplina. Sua senha fica protegida pelo Supabase e não é salva no banco do AprendeIA.
+          </p>
+        )}
         {message && (
           <p className="form-message" role="status">
             {message}
           </p>
         )}
         <button className="primary-button" type="submit" disabled={loading}>
-          {loading ? "Criando..." : "Criar conta"}
+          {loading
+            ? "Enviando..."
+            : selectedRole === "teacher"
+              ? "Solicitar acesso de professor"
+              : "Criar conta de aluno"}
         </button>
       </form>
       <p className="switch-copy">
@@ -1132,19 +1257,17 @@ function PracticeProfile({
 function TeacherProfile({ onLogout }: { onLogout: () => void }) {
   type TeacherTab = "overview" | "classes" | "reports" | "contents" | "ai";
   const [activeTab, setActiveTab] = useState<TeacherTab>("overview");
-  const [overview, setOverview] = useState<TeacherOverview>({
-    subject: "Matemática",
-    class_count: 2,
-    student_count: 2,
-    active_alerts: 1,
-    average_accuracy: 60,
-  });
-  const [classes, setClasses] = useState<TeacherClass[]>(demoTeacherClasses);
-  const [selectedClassId, setSelectedClassId] = useState(demoTeacherClasses[0].id);
-  const [selectedClass, setSelectedClass] = useState<TeacherClass>(demoTeacherClasses[0]);
-  const [selectedStudentId, setSelectedStudentId] = useState(demoTeacherStudents[0].id);
-  const [alerts, setAlerts] = useState<TeacherAlert[]>(demoTeacherAlerts);
-  const [contents, setContents] = useState<TeacherContent[]>(demoTeacherContents);
+  const [overview, setOverview] = useState<TeacherOverview>(
+    supabase
+      ? { subject: "Sua disciplina", class_count: 0, student_count: 0, active_alerts: 0, average_accuracy: 0 }
+      : { subject: "Matemática", class_count: 2, student_count: 2, active_alerts: 1, average_accuracy: 60 },
+  );
+  const [classes, setClasses] = useState<TeacherClass[]>(supabase ? [] : demoTeacherClasses);
+  const [selectedClassId, setSelectedClassId] = useState(supabase ? "" : demoTeacherClasses[0].id);
+  const [selectedClass, setSelectedClass] = useState<TeacherClass>(supabase ? emptyTeacherClass : demoTeacherClasses[0]);
+  const [selectedStudentId, setSelectedStudentId] = useState(supabase ? "" : demoTeacherStudents[0].id);
+  const [alerts, setAlerts] = useState<TeacherAlert[]>(supabase ? [] : demoTeacherAlerts);
+  const [contents, setContents] = useState<TeacherContent[]>(supabase ? [] : demoTeacherContents);
   const [recommendation, setRecommendation] = useState<TeacherRecommendation | null>(null);
   const [message, setMessage] = useState("Painel pronto para acompanhar sua disciplina.");
   const [busy, setBusy] = useState(false);
@@ -1171,6 +1294,10 @@ function TeacherProfile({ onLogout }: { onLogout: () => void }) {
         setAlerts((await alertsResponse.json()) as TeacherAlert[]);
         setContents((await contentsResponse.json()) as TeacherContent[]);
         setSelectedClassId(nextClasses[0]?.id ?? "");
+        if (!nextClasses.length) {
+          setSelectedClass(emptyTeacherClass);
+          setSelectedStudentId("");
+        }
         setMessage("Dados atualizados com segurança.");
       } catch {
         if (active) setMessage("Não foi possível atualizar o painel. Tente novamente.");
@@ -1460,6 +1587,17 @@ function TeacherProfile({ onLogout }: { onLogout: () => void }) {
                 <div className="metric-emphasis"><span>Precisam de atenção</span><strong>{overview.active_alerts}</strong></div>
                 <div><span>Média de acertos</span><strong>{overview.average_accuracy}%</strong></div>
               </section>
+              <nav className="teacher-quick-actions" aria-label="Atalhos do painel">
+                <button onClick={() => setActiveTab("classes")}>
+                  <span>01</span><strong>Organizar turmas</strong><small>Crie uma turma e inclua alunos</small>
+                </button>
+                <button onClick={() => setActiveTab("contents")}>
+                  <span>02</span><strong>Adicionar conteúdo</strong><small>Publique ou importe materiais</small>
+                </button>
+                <button onClick={() => setActiveTab("reports")}>
+                  <span>03</span><strong>Exportar relatório</strong><small>Baixe o resumo da turma em CSV</small>
+                </button>
+              </nav>
               <div className="teacher-overview-grid">
                 <section className="teacher-surface teacher-alert-feed">
                   <div className="teacher-section-title">
@@ -1498,6 +1636,7 @@ function TeacherProfile({ onLogout }: { onLogout: () => void }) {
                 <label>
                   TURMA ATUAL
                   <select value={selectedClassId} onChange={(event) => setSelectedClassId(event.target.value)}>
+                    {!classes.length && <option value="">Crie sua primeira turma</option>}
                     {classes.map((item) => <option key={item.id} value={item.id}>{item.name} · {item.school_year}</option>)}
                   </select>
                 </label>
@@ -1513,8 +1652,8 @@ function TeacherProfile({ onLogout }: { onLogout: () => void }) {
                     <div><span className="section-index">{String(selectedClass.student_count).padStart(2, "0")}</span><h2>Alunos da turma</h2></div>
                   </div>
                   <form className="add-student-form" onSubmit={addStudent}>
-                    <input name="student_email" type="email" placeholder="email@escola.com" required aria-label="E-mail do estudante" />
-                    <button className="outline-button" disabled={busy}>Incluir</button>
+                    <input name="student_email" type="email" placeholder="email@escola.com" required disabled={!selectedClassId} aria-label="E-mail do estudante" />
+                    <button className="outline-button" disabled={busy || !selectedClassId}>Incluir</button>
                   </form>
                   <div className="roster-list">
                     {selectedClass.students?.length ? selectedClass.students.map((student) => (
@@ -1575,7 +1714,7 @@ function TeacherProfile({ onLogout }: { onLogout: () => void }) {
                 <span>RELATÓRIO ATUAL</span>
                 <strong>{selectedClass.name}</strong>
                 <small>{selectedClass.student_count} estudantes · {overview.subject}</small>
-                <button className="primary-button" onClick={() => void exportReport()}>Exportar CSV</button>
+                <button className="primary-button" onClick={() => void exportReport()} disabled={!selectedClassId}>Exportar CSV</button>
               </div>
             </section>
           )}
@@ -1661,12 +1800,37 @@ function DifficultyTrend({ points }: { points: TrendPoint[] }) {
 
 /** Permite que apenas a administradora crie contas e atribua cargos iniciais. */
 function AdminProfile({ onLogout }: { onLogout: () => void }) {
-  const [people, setPeople] = useState([
-    { name: "Ana Souza", role: "Estudante" },
-    { name: "Prof. Carlos Lima", role: "Professor" },
-  ]);
+  const [people, setPeople] = useState(
+    supabase
+      ? []
+      : [
+          { name: "Ana Souza", role: "Estudante" },
+          { name: "Prof. Carlos Lima", role: "Professor" },
+        ],
+  );
+  const [teacherRequests, setTeacherRequests] = useState<TeacherRegistrationRequest[]>([]);
   const [message, setMessage] = useState("");
   const [selectedRole, setSelectedRole] = useState<"student" | "teacher">("student");
+  const [busy, setBusy] = useState(false);
+
+  useEffect(() => {
+    let active = true;
+    async function loadTeacherRequests() {
+      if (!supabase) return;
+      const response = await apiFetch("/admin/teacher-requests");
+      if (!active) return;
+      if (!response.ok) {
+        setMessage("Não foi possível carregar as solicitações de professor.");
+        return;
+      }
+      setTeacherRequests((await response.json()) as TeacherRegistrationRequest[]);
+    }
+    void loadTeacherRequests();
+    return () => {
+      active = false;
+    };
+  }, []);
+
   /** Envia dados ao servidor, onde o token e o cargo de admin são verificados. */
   async function addPerson(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -1676,27 +1840,57 @@ function AdminProfile({ onLogout }: { onLogout: () => void }) {
     const name = String(data.get("name"));
     const role = String(data.get("role")) as Role;
     const label = role === "teacher" ? "Professor" : "Estudante";
-    if (supabase) {
-      const response = await apiFetch("/admin/users", {
+    setBusy(true);
+    try {
+      if (supabase) {
+        const response = await apiFetch("/admin/users", {
+          method: "POST",
+          body: JSON.stringify({
+            name,
+            email: String(data.get("email")),
+            password: String(data.get("password")),
+            role,
+            subject: role === "teacher" ? String(data.get("subject")) : undefined,
+          }),
+        });
+        if (!response.ok) {
+          const detail = await response.json().catch(() => ({}));
+          setMessage(detail.detail || "Não foi possível incluir o usuário.");
+          return;
+        }
+      }
+      setPeople((current) => [...current, { name, role: label }]);
+      setMessage("Usuário incluído com sucesso.");
+      form.reset();
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  /** Aprova o pedido sem receber ou redefinir a senha escolhida pelo professor. */
+  async function approveTeacherRequest(event: FormEvent<HTMLFormElement>, request: TeacherRegistrationRequest) {
+    event.preventDefault();
+    const subject = String(new FormData(event.currentTarget).get("subject"));
+    setBusy(true);
+    setMessage("");
+    try {
+      const response = await apiFetch(`/admin/teacher-requests/${request.id}/approve`, {
         method: "POST",
-        body: JSON.stringify({
-          name,
-          email: String(data.get("email")),
-          password: String(data.get("password")),
-          role,
-          subject: role === "teacher" ? String(data.get("subject")) : undefined,
-        }),
+        body: JSON.stringify({ subject }),
       });
       if (!response.ok) {
         const detail = await response.json().catch(() => ({}));
-        setMessage(detail.detail || "Não foi possível incluir o usuário.");
+        setMessage(detail.detail || "Não foi possível aprovar o cadastro.");
         return;
       }
+      setTeacherRequests((current) => current.filter((item) => item.id !== request.id));
+      setPeople((current) => [...current, { name: request.full_name, role: "Professor" }]);
+      setMessage(`Cadastro de ${request.full_name} aprovado em ${subject}.`);
+    } finally {
+      setBusy(false);
     }
-    setPeople([...people, { name, role: label }]);
-    setMessage("Usuário incluído com sucesso.");
-    form.reset();
   }
+
   return (
     <main className="profile-page">
       <Header area="ÁREA DA ADMINISTRADORA" onLogout={onLogout} />
@@ -1706,6 +1900,41 @@ function AdminProfile({ onLogout }: { onLogout: () => void }) {
         <p className="subtitle">
           Inclua estudantes e professores em seus respectivos cargos.
         </p>
+        <section className="teacher-request-queue" aria-labelledby="teacher-requests-title">
+          <div className="request-queue-heading">
+            <div>
+              <p className="eyebrow">APROVAÇÃO DOCENTE</p>
+              <h2 id="teacher-requests-title">Solicitações de professores</h2>
+            </div>
+            <span>{teacherRequests.length} pendente(s)</span>
+          </div>
+          {teacherRequests.length ? (
+            <div className="teacher-request-list">
+              {teacherRequests.map((request) => (
+                <article className="teacher-request-row" key={request.id}>
+                  <Avatar name={request.full_name} />
+                  <div>
+                    <strong>{request.full_name}</strong>
+                    <small>{request.email}</small>
+                  </div>
+                  <form onSubmit={(event) => void approveTeacherRequest(event, request)}>
+                    <label>
+                      <span className="sr-only">Disciplina de {request.full_name}</span>
+                      <select name="subject" defaultValue={request.requested_subject} required>
+                        {subjects.map((subject) => (
+                          <option key={subject.name} value={subject.name}>{subject.name}</option>
+                        ))}
+                      </select>
+                    </label>
+                    <button className="outline-button" disabled={busy}>Aprovar</button>
+                  </form>
+                </article>
+              ))}
+            </div>
+          ) : (
+            <p className="teacher-empty">Nenhuma solicitação aguardando aprovação.</p>
+          )}
+        </section>
         <div className="admin-layout">
           <section className="profile-panel">
             <h2>Novo usuário</h2>
@@ -1741,12 +1970,12 @@ function AdminProfile({ onLogout }: { onLogout: () => void }) {
               {selectedRole === "teacher" && (
                 <label>
                   DISCIPLINA
-                  <input
-                    name="subject"
-                    placeholder="Ex: Matemática"
-                    required
-                    aria-describedby="subject-help"
-                  />
+                  <select name="subject" defaultValue="" required aria-describedby="subject-help">
+                    <option value="" disabled>Selecione...</option>
+                    {subjects.map((subject) => (
+                      <option key={subject.name} value={subject.name}>{subject.name}</option>
+                    ))}
+                  </select>
                   <small id="subject-help" className="field-help">
                     Cada disciplina recebe um único professor neste projeto.
                   </small>
@@ -1757,7 +1986,7 @@ function AdminProfile({ onLogout }: { onLogout: () => void }) {
                   {message}
                 </p>
               )}
-              <button className="primary-button">Adicionar usuário</button>
+              <button className="primary-button" disabled={busy}>Adicionar usuário</button>
             </form>
           </section>
           <section className="profile-panel">

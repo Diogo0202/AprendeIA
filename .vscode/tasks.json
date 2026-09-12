@@ -1,0 +1,89 @@
+{
+  "version": "2.0.0",
+  "tasks": [
+    {
+      // Inicia o React no endereço local que também está liberado no CORS da API.
+      "label": "AprendeIA: frontend",
+      "type": "shell",
+      "command": "npm run dev -- --host 127.0.0.1",
+      "options": {
+        "cwd": "${workspaceFolder}\\frontend"
+      },
+      "isBackground": true,
+      "problemMatcher": {
+        "owner": "vite",
+        "pattern": {
+          "regexp": "^(.*)$",
+          "message": 1
+        },
+        "background": {
+          "activeOnStart": true,
+          "beginsPattern": "VITE",
+          "endsPattern": "Local:.*http://127.0.0.1:5173"
+        }
+      },
+      "presentation": {
+        "group": "aprendeia",
+        "reveal": "always",
+        "panel": "dedicated"
+      }
+    },
+    {
+      // Inicia o FastAPI com recarga automática em http://127.0.0.1:8000.
+      "label": "AprendeIA: backend",
+      "type": "shell",
+      "command": "& '${workspaceFolder}\\backend\\.venv\\Scripts\\python.exe' -m uvicorn main:app --reload --host 127.0.0.1 --port 8000",
+      "options": {
+        "cwd": "${workspaceFolder}\\backend"
+      },
+      "isBackground": true,
+      "problemMatcher": {
+        "owner": "uvicorn",
+        "pattern": {
+          "regexp": "^(.*)$",
+          "message": 1
+        },
+        "background": {
+          "activeOnStart": true,
+          "beginsPattern": "Started reloader|Will watch for changes",
+          "endsPattern": "Uvicorn running on http://127.0.0.1:8000"
+        }
+      },
+      "presentation": {
+        "group": "aprendeia",
+        "reveal": "always",
+        "panel": "dedicated"
+      }
+    },
+    {
+      // Abre os dois servidores em terminais separados com um único comando.
+      "label": "AprendeIA: iniciar tudo",
+      "dependsOn": [
+        "AprendeIA: backend",
+        "AprendeIA: frontend"
+      ],
+      "dependsOrder": "parallel",
+      "problemMatcher": []
+    },
+    {
+      // Executa todos os testes do backend antes de um commit.
+      "label": "AprendeIA: testar backend",
+      "type": "shell",
+      "command": "& '${workspaceFolder}\\backend\\.venv\\Scripts\\python.exe' -m unittest discover -s backend -p 'test_*.py' -v",
+      "options": {
+        "cwd": "${workspaceFolder}"
+      },
+      "problemMatcher": "$python"
+    },
+    {
+      // Confere os tipos e gera a versão final do frontend.
+      "label": "AprendeIA: testar frontend",
+      "type": "shell",
+      "command": "npm run build",
+      "options": {
+        "cwd": "${workspaceFolder}\\frontend"
+      },
+      "problemMatcher": "$tsc"
+    }
+  ]
+}

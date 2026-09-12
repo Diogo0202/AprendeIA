@@ -16,6 +16,7 @@ O **AprendeIA** é um protótipo de plataforma de reforço escolar que combina R
 - 📬 Alertas de dificuldade por disciplina no painel e por e-mail para o professor responsável.
 - 🗓️ Resumo semanal dos alertas ativos, protegido por um segredo interno.
 - 🛠️ Área administrativa para cadastrar estudantes e professores.
+- ✅ Solicitação de cadastro docente com aprovação da administradora antes de liberar o painel.
 - 📈 Ajuste de dificuldade conforme os acertos do aluno.
 - 🛡️ Regras de segurança que impedem acesso a dados de outros usuários.
 
@@ -54,6 +55,8 @@ AprendeIA/
 Os comentários explicam as escolhas que realmente importam: login, permissões, fluxo das telas e adaptação das questões. Para entender o panorama do projeto, veja [docs/ARQUITETURA.md](docs/ARQUITETURA.md).
 
 A regra de XP, níveis e insígnias está explicada em [docs/GAMIFICACAO.md](docs/GAMIFICACAO.md), e a área docente em [docs/PAINEL_PROFESSOR.md](docs/PAINEL_PROFESSOR.md).
+
+O fluxo de solicitação e aprovação de professores está detalhado em [docs/CADASTRO_PROFESSOR.md](docs/CADASTRO_PROFESSOR.md).
 
 Arquivos gerados automaticamente, como `package-lock.json`, ficam sem comentários para não quebrar seu formato. As versões das dependências continuam fixas para o projeto se comportar igual em outras máquinas.
 
@@ -127,7 +130,7 @@ WEEKLY_SUMMARY_CRON_SECRET=gere_um_valor_longo_e_aleatorio
 | --- | --- | --- |
 | 👩‍🎓 Estudante | Ver o próprio progresso, aulas e questões | Acessar dados de outro aluno ou área administrativa |
 | 👨‍🏫 Professor | Consultar estudantes e alertas da própria disciplina | Alterar perfil, progresso ou dificuldades de estudantes; ver outra matéria |
-| 🛠️ Administração | Cadastrar estudantes e professores, atribuindo a disciplina do professor | Consultar dados pedagógicos ou entrar no modo de professor |
+| 🛠️ Administração | Cadastrar usuários e aprovar solicitações de professor, atribuindo a disciplina | Consultar dados pedagógicos ou entrar no modo de professor |
 
 As regras são verificadas na API e também no banco com políticas RLS. Assim, trocar um ID na URL não libera dados de outra pessoa. ✋
 
@@ -151,6 +154,8 @@ As regras são verificadas na API e também no banco com políticas RLS. Assim, 
 | `GET/POST` | `/teacher/contents` | Lista ou cria conteúdos da disciplina |
 | `POST` | `/teacher/contents/import` | Importa até 100 conteúdos em CSV ou JSON |
 | `POST` | `/teacher/recommendations` | Gera uma orientação pedagógica com métricas anônimas |
+| `GET` | `/admin/teacher-requests` | Lista solicitações docentes pendentes para a administração |
+| `POST` | `/admin/teacher-requests/{user_id}/approve` | Aprova o professor e vincula sua disciplina em uma transação |
 | `POST` | `/admin/users` | Cria estudantes ou professores |
 | `POST` | `/internal/weekly-difficulty-summary` | Envia resumo semanal; exige `X-Cron-Secret` |
 
@@ -164,6 +169,7 @@ As regras são verificadas na API e também no banco com políticas RLS. Assim, 
    - `supabase/migrations/20260908170000_student_gamification.sql`
    - `supabase/migrations/20260909120000_teacher_dashboard.sql`
    - `supabase/migrations/20260909211500_post_deploy_hardening.sql`
+   - `supabase/migrations/20260911120000_teacher_registration_workflow.sql`
 3. Crie sua primeira conta pela interface.
 4. No SQL Editor, promova somente essa conta inicial:
 

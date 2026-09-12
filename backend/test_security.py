@@ -5,13 +5,30 @@ from unittest.mock import patch
 
 from fastapi import HTTPException
 from pydantic import ValidationError
+from supabase.lib.client_options import SyncClientOptions
 
 sys.path.insert(0, os.path.dirname(__file__))
 
-from main import QuestionRequest, UserCreate, app, current_user, hide_question_solution, require_role, sanitize_prompt_value
+from main import TeacherApproval, QuestionRequest, UserCreate, app, current_user, database, hide_question_solution, require_role, sanitize_prompt_value
 
 
 class SecurityBoundaryTests(unittest.TestCase):
+    def test_database_uses_sync_supabase_options(self):
+        """A primeira consulta real não pode quebrar por misturar cliente sync e async."""
+
+        environment = {
+            "SUPABASE_URL": "https://project.supabase.co",
+            "SUPABASE_SECRET_KEY": "sb_secret_test_only",
+        }
+        with patch.dict(os.environ, environment, clear=True):
+            with patch("main.create_client") as create_client:
+                database()
+
+        options = create_client.call_args.kwargs["options"]
+        self.assertIsInstance(options, SyncClientOptions)
+        self.assertFalse(options.auto_refresh_token)
+        self.assertFalse(options.persist_session)
+
     def test_current_user_rejects_requests_without_supabase_configuration(self):
         """Sem banco configurado, nenhuma rota deve ganhar um usuário demo confiável."""
         with patch.dict(os.environ, {}, clear=True):
@@ -55,6 +72,23 @@ class SecurityBoundaryTests(unittest.TestCase):
                 password="senha-segura",
                 role="teacher",
             )
+
+    def test_teacher_request_approval_routes_are_admin_only(self):
+        """Solicitar o cadastro não pode transformar a própria conta em professor."""
+        paths = {route.path for route in app.routes}
+
+        self.assertIn("/admin/teacher-requests", paths)
+        self.assertIn("/admin/teacher-requests/{user_id}/approve", paths)
+        with self.assertRaises(HTTPException) as error:
+            require_role("admin")({"role": "student"})
+
+        self.assertEqual(error.exception.status_code, 403)
+
+    def test_teacher_approval_normalizes_subject(self):
+        """A disciplina aprovada segue o mesmo formato usado no cadastro direto."""
+        approval = TeacherApproval(subject="  Matemática  ")
+
+        self.assertEqual(approval.subject, "Matemática")
 
     def test_student_question_payload_never_contains_the_solution_before_answering(self):
         """O gabarito só deve sair no retorno de correção, nunca na próxima questão."""
