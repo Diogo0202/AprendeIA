@@ -21,12 +21,24 @@
       "justMyCode": true
     },
     {
-      // Use esta opção depois de iniciar a tarefa do frontend.
+      // Esta opção sobe o Vite automaticamente antes de abrir o navegador.
       "name": "AprendeIA: depurar frontend",
       "type": "pwa-chrome",
       "request": "launch",
       "url": "http://127.0.0.1:5173",
-      "webRoot": "${workspaceFolder}\\frontend"
+      "webRoot": "${workspaceFolder}\\frontend",
+      "preLaunchTask": "AprendeIA: frontend"
+    }
+  ],
+  "compounds": [
+    {
+      // Com esta opção, um único F5 inicia API, site e depuração juntos.
+      "name": "AprendeIA: aplicativo completo",
+      "configurations": [
+        "AprendeIA: depurar backend",
+        "AprendeIA: depurar frontend"
+      ],
+      "stopAll": true
     }
   ]
 }
