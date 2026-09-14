@@ -5,6 +5,11 @@ import { accessToken, apiUrl, isSupabaseConfigured, supabase } from "./lib/supab
 type View = "login" | "signup" | "student" | "teacher" | "teacher-pending" | "admin" | "practice";
 type Role = "student" | "teacher" | "admin";
 type SignupRole = Extract<Role, "student" | "teacher">;
+type LoginSessionPayload = {
+  access_token?: string;
+  refresh_token?: string;
+  detail?: string;
+};
 type UserProfile = {
   id?: string;
   name: string;
@@ -419,7 +424,7 @@ export default function App() {
     setAuthLoading(false);
   }
 
-  /** Autentica no Supabase ou usa o seletor local no modo de demonstração. */
+  /** Passa pelo backend para aplicar o limite antes de criar a sessão Supabase. */
   async function handleLogin(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     const data = new FormData(event.currentTarget);
@@ -433,12 +438,44 @@ export default function App() {
       setAuthLoading(false);
       return;
     }
-    const { error } = await supabase.auth.signInWithPassword({
-      email: String(data.get("email")),
-      password: String(data.get("password")),
-    });
-    if (error) {
-      setAuthMessage("E-mail ou senha inválidos.");
+    try {
+      const loginResponse = await fetch(`${apiUrl}/auth/login`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          email: String(data.get("email")),
+          password: String(data.get("password")),
+        }),
+      });
+      const payload = (await loginResponse.json().catch(() => ({}))) as LoginSessionPayload;
+      if (!loginResponse.ok) {
+        if (loginResponse.status === 429) {
+          const seconds = Number(loginResponse.headers.get("Retry-After") || 900);
+          const minutes = Math.max(1, Math.ceil(seconds / 60));
+          setAuthMessage(`Limite de tentativas atingido. Tente novamente em ${minutes} minuto${minutes === 1 ? "" : "s"}.`);
+        } else if (loginResponse.status >= 500) {
+          setAuthMessage("O login está temporariamente indisponível. Tente novamente mais tarde.");
+        } else {
+          setAuthMessage("E-mail ou senha inválidos.");
+        }
+        setAuthLoading(false);
+        return;
+      }
+      if (!payload.access_token || !payload.refresh_token) {
+        setAuthMessage("O login está temporariamente indisponível. Tente novamente mais tarde.");
+        setAuthLoading(false);
+        return;
+      }
+      const { error } = await supabase.auth.setSession({
+        access_token: payload.access_token,
+        refresh_token: payload.refresh_token,
+      });
+      if (error) {
+        setAuthMessage("Não foi possível abrir sua sessão. Tente novamente.");
+        setAuthLoading(false);
+      }
+    } catch {
+      setAuthMessage("Não foi possível conectar ao servidor. Tente novamente.");
       setAuthLoading(false);
     }
   }

@@ -18,13 +18,25 @@ from typing import Annotated, Any
 from zoneinfo import ZoneInfo
 
 from dotenv import load_dotenv
-from fastapi import Depends, FastAPI, Header, HTTPException, Response
+from fastapi import Depends, FastAPI, Header, HTTPException, Request, Response
 from fastapi.middleware.cors import CORSMiddleware
 from openai import OpenAI
 from pydantic import BaseModel, Field, field_validator, model_validator
 from supabase import Client, create_client
 from supabase.lib.client_options import SyncClientOptions
+from supabase_auth.errors import AuthApiError
 
+from auth_security import (
+    LOGIN_LOCK_SECONDS,
+    LOGIN_MAX_FAILURES,
+    LOGIN_WINDOW_SECONDS,
+    NETWORK_MAX_FAILURES,
+    RateLimitState,
+    client_network,
+    normalize_login_email,
+    rate_limit_hash,
+    rate_limit_state,
+)
 from difficulty_alerts import (
     build_immediate_email,
     build_weekly_email,
@@ -92,6 +104,20 @@ SEED_QUESTIONS = [
 # configurado, a fonte de verdade passa a ser o PostgreSQL.
 question_bank = list(SEED_QUESTIONS)
 performance = defaultdict(lambda: defaultdict(lambda: {"attempts": 0, "correct": 0, "difficulty": "basic"}))
+
+
+class LoginRequest(BaseModel):
+    """Credenciais curtas aceitas somente pelo endpoint protegido de login."""
+
+    email: str = Field(min_length=5, max_length=254, pattern=r"^[^@\s]+@[^@\s]+\.[^@\s]+$")
+    password: str = Field(min_length=1, max_length=128)
+
+    @field_validator("email")
+    @classmethod
+    def normalize_email(cls, value: str) -> str:
+        """Garante que o mesmo e-mail sempre use o mesmo contador."""
+
+        return normalize_login_email(value)
 
 
 class UserCreate(BaseModel):
@@ -253,6 +279,116 @@ def database() -> Client:
         # O backend usa o cliente síncrono do Supabase. A opção base não possui
         # o armazenamento esperado e só falha quando a primeira consulta real acontece.
         options=SyncClientOptions(auto_refresh_token=False, persist_session=False),
+    )
+
+
+def login_limit_status(db: Client, key_hash: str, key_kind: str) -> RateLimitState:
+    """Consulta o contador pelo backend, sem abrir a tabela ao navegador."""
+
+    try:
+        data = db.rpc(
+            "login_rate_limit_status",
+            {
+                "p_key_hash": key_hash,
+                "p_key_kind": key_kind,
+                "p_window_seconds": LOGIN_WINDOW_SECONDS,
+            },
+        ).execute().data
+        return rate_limit_state(data)
+    except HTTPException:
+        raise
+    except Exception as error:
+        raise HTTPException(status_code=503, detail="Proteção de login temporariamente indisponível.") from error
+
+
+def reserve_login_attempt(db: Client, identity_hash: str) -> RateLimitState:
+    """Reserva uma das quatro tentativas antes de conferir a senha."""
+
+    try:
+        data = db.rpc(
+            "reserve_login_attempt",
+            {
+                "p_key_hash": identity_hash,
+                "p_max_attempts": LOGIN_MAX_FAILURES,
+                "p_window_seconds": LOGIN_WINDOW_SECONDS,
+                "p_lock_seconds": LOGIN_LOCK_SECONDS,
+            },
+        ).execute().data
+        return rate_limit_state(data)
+    except HTTPException:
+        raise
+    except Exception as error:
+        raise HTTPException(status_code=503, detail="Proteção de login temporariamente indisponível.") from error
+
+
+def record_login_failure(db: Client, key_hash: str, key_kind: str, max_attempts: int) -> RateLimitState:
+    """Incrementa o contador com bloqueio atômico dentro do PostgreSQL."""
+
+    try:
+        data = db.rpc(
+            "record_login_failure",
+            {
+                "p_key_hash": key_hash,
+                "p_key_kind": key_kind,
+                "p_max_attempts": max_attempts,
+                "p_window_seconds": LOGIN_WINDOW_SECONDS,
+                "p_lock_seconds": LOGIN_LOCK_SECONDS,
+            },
+        ).execute().data
+        return rate_limit_state(data)
+    except HTTPException:
+        raise
+    except Exception as error:
+        raise HTTPException(status_code=503, detail="Proteção de login temporariamente indisponível.") from error
+
+
+def clear_login_failures(db: Client, identity_hash: str) -> None:
+    """Um login correto limpa apenas as falhas daquela conta."""
+
+    try:
+        db.rpc(
+            "clear_login_failures",
+            {"p_key_hash": identity_hash, "p_key_kind": "identity"},
+        ).execute()
+    except Exception as error:
+        raise HTTPException(status_code=503, detail="Proteção de login temporariamente indisponível.") from error
+
+
+def login_limit_error(*states: RateLimitState) -> HTTPException:
+    """Monta uma resposta padrão sem confirmar se o e-mail existe."""
+
+    retry_after = max(1, *(state.retry_after_seconds for state in states))
+    return HTTPException(
+        status_code=429,
+        detail="Muitas tentativas de acesso. Aguarde antes de tentar novamente.",
+        headers={"Retry-After": str(retry_after), "Cache-Control": "no-store"},
+    )
+
+
+def reject_failed_login(db: Client, identity_state: RateLimitState, network_hash: str) -> None:
+    """Registra a falha e responde sem revelar qual parte da credencial errou."""
+
+    network_state = record_login_failure(db, network_hash, "network", NETWORK_MAX_FAILURES)
+    states = (identity_state, network_state)
+    blocked = tuple(
+        state
+        for state in states
+        if not state.allowed or state.failed_attempts in {LOGIN_MAX_FAILURES, NETWORK_MAX_FAILURES}
+    )
+    if blocked:
+        raise login_limit_error(*blocked)
+    raise HTTPException(
+        status_code=401,
+        detail="E-mail ou senha inválidos.",
+        headers={"Cache-Control": "no-store"},
+    )
+
+
+def authenticate_with_password(credentials: LoginRequest):
+    """Usa um cliente separado para a sessão nunca trocar o papel da RPC."""
+
+    return database().auth.sign_in_with_password(
+        {"email": credentials.email, "password": credentials.password}
     )
 
 
@@ -594,6 +730,58 @@ def teacher_student_summaries(db: Client, subject_id: str, student_ids: list[str
             }
         )
     return sorted(summaries, key=lambda item: item["full_name"].casefold())
+
+
+@app.post("/auth/login")
+def login(credentials: LoginRequest, request: Request, response: Response):
+    """Autentica com limite persistente de quatro falhas por conta."""
+
+    db = database()
+    identity_hash = rate_limit_hash("identity", credentials.email)
+    network_hash = rate_limit_hash("network", client_network(request))
+    network_state = login_limit_status(db, network_hash, "network")
+    if not network_state.allowed:
+        raise login_limit_error(network_state)
+    identity_state = reserve_login_attempt(db, identity_hash)
+    if not identity_state.allowed:
+        raise login_limit_error(identity_state)
+
+    try:
+        auth_response = authenticate_with_password(credentials)
+    except AuthApiError as error:
+        status = int(error.status or 500)
+        if status == 429:
+            raise HTTPException(
+                status_code=429,
+                detail="Muitas tentativas de acesso. Aguarde antes de tentar novamente.",
+                headers={"Retry-After": "300", "Cache-Control": "no-store"},
+            ) from error
+        if 400 <= status < 500:
+            reject_failed_login(db, identity_state, network_hash)
+        raise HTTPException(
+            status_code=502,
+            detail="O serviço de autenticação está temporariamente indisponível.",
+            headers={"Cache-Control": "no-store"},
+        ) from error
+    except Exception as error:
+        raise HTTPException(
+            status_code=502,
+            detail="O serviço de autenticação está temporariamente indisponível.",
+            headers={"Cache-Control": "no-store"},
+        ) from error
+
+    session = auth_response.session
+    if not session or not session.access_token or not session.refresh_token:
+        reject_failed_login(db, identity_state, network_hash)
+
+    clear_login_failures(db, identity_hash)
+    response.headers["Cache-Control"] = "no-store"
+    return {
+        "access_token": session.access_token,
+        "refresh_token": session.refresh_token,
+        "expires_in": session.expires_in,
+        "token_type": getattr(session, "token_type", "bearer"),
+    }
 
 
 @app.get("/health")

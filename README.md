@@ -6,7 +6,7 @@ O **AprendeIA** é um protótipo de plataforma de reforço escolar que combina R
 
 ## 🌱 O que a plataforma faz
 
-- 🔐 Login por e-mail e senha com Supabase Auth.
+- 🔐 Login por e-mail e senha com Supabase Auth e bloqueio após quatro falhas.
 - 👩‍🎓 Perfil do estudante com matérias, progresso, aulas restantes e dificuldades.
 - 🏆 Jornada gamificada com XP, níveis, sequência de estudos e insígnias por consistência e acertos.
 - 🧩 Questões geradas por IA com níveis básico, intermediário e avançado.
@@ -52,7 +52,7 @@ AprendeIA/
 
 ## 💬 Código comentado
 
-Os comentários explicam as escolhas que realmente importam: login, permissões, fluxo das telas e adaptação das questões. Para entender o panorama do projeto, veja [docs/ARQUITETURA.md](docs/ARQUITETURA.md).
+Os comentários explicam as escolhas que realmente importam: login, permissões, fluxo das telas e adaptação das questões. O índice completo está em [docs/README.md](docs/README.md), e o panorama técnico em [docs/ARQUITETURA.md](docs/ARQUITETURA.md).
 
 A regra de XP, níveis e insígnias está explicada em [docs/GAMIFICACAO.md](docs/GAMIFICACAO.md), e a área docente em [docs/PAINEL_PROFESSOR.md](docs/PAINEL_PROFESSOR.md).
 
@@ -112,6 +112,8 @@ OPENAI_API_KEY=sua_chave_local
 OPENAI_MODEL=gpt-5-mini
 SUPABASE_URL=https://seu-projeto.supabase.co
 SUPABASE_SECRET_KEY=sb_secret_...
+RATE_LIMIT_PEPPER=gere_um_valor_longo_e_aleatorio
+TRUSTED_PROXY_CIDRS=
 FRONTEND_URL=http://localhost:5173
 SMTP_HOST=smtp.seu-provedor.com
 SMTP_PORT=465
@@ -138,6 +140,7 @@ As regras são verificadas na API e também no banco com políticas RLS. Assim, 
 
 | Método | Endpoint | Para que serve |
 | --- | --- | --- |
+| `POST` | `/auth/login` | Autentica e bloqueia a conta após quatro falhas em quinze minutos |
 | `GET` | `/health` | Verifica se a API está disponível para um usuário autenticado |
 | `GET` | `/question-bank` | Lista questões permitidas ao usuário |
 | `POST` | `/question-bank/generate` | Gera uma questão para professor ou administração |
@@ -170,6 +173,9 @@ As regras são verificadas na API e também no banco com políticas RLS. Assim, 
    - `supabase/migrations/20260909120000_teacher_dashboard.sql`
    - `supabase/migrations/20260909211500_post_deploy_hardening.sql`
    - `supabase/migrations/20260911120000_teacher_registration_workflow.sql`
+   - `supabase/migrations/20260913143000_login_rate_limit.sql`
+   - `supabase/migrations/20260913150000_login_rate_limit_policy.sql`
+   - `supabase/migrations/20260913153000_login_attempt_reservation.sql`
 3. Crie sua primeira conta pela interface.
 4. No SQL Editor, promova somente essa conta inicial:
 
@@ -187,7 +193,7 @@ Crie dois serviços usando este mesmo repositório:
 
 | Serviço | Pasta raiz | Variáveis no Railway |
 | --- | --- | --- |
-| ⚙️ API | `/backend` | `OPENAI_API_KEY`, `OPENAI_MODEL`, `SUPABASE_URL`, `SUPABASE_SECRET_KEY`, `FRONTEND_URL`, variáveis SMTP e `WEEKLY_SUMMARY_CRON_SECRET` |
+| ⚙️ API | `/backend` | `OPENAI_API_KEY`, `OPENAI_MODEL`, `SUPABASE_URL`, `SUPABASE_SECRET_KEY`, `RATE_LIMIT_PEPPER`, `TRUSTED_PROXY_CIDRS`, `FRONTEND_URL`, variáveis SMTP e `WEEKLY_SUMMARY_CRON_SECRET` |
 | 🎨 Interface | `/frontend` | `VITE_SUPABASE_URL`, `VITE_SUPABASE_PUBLISHABLE_KEY`, `VITE_API_URL` |
 
 Os `Dockerfile`s já definem como cada serviço é construído. O frontend monta um `runtime-config.js` quando inicia, então as variáveis `VITE_*` podem ser configuradas no painel do Railway sem entrar no Git.
@@ -199,7 +205,7 @@ Para os alertas, configure o provedor SMTP no serviço da API e agende uma chama
 ## 🌟 Próximos passos
 
 - Validar as questões com professores antes de usá-las com estudantes reais.
-- Criar recuperação de senha e limites de uso da API.
+- Criar recuperação de senha, CAPTCHA e limites para outras rotas sensíveis.
 - Fazer testes completos de RLS com contas de cada perfil.
 - Adicionar monitoramento de erros e disponibilidade após o deploy.
 

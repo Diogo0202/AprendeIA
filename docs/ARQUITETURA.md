@@ -14,7 +14,7 @@ Essa divisão evita colocar chaves secretas ou decisões de autorização no nav
 
 ## Autenticação e cargos
 
-O React autentica e recebe uma sessão do Supabase. Depois lê o perfil autorizado pela política RLS. O cargo não é escolhido no login e não usa `user_metadata`, pois esse campo pode ser alterado pelo próprio usuário.
+O React envia o login ao FastAPI, que aplica o limite persistente de tentativas antes de autenticar no Supabase. Depois o navegador abre a sessão devolvida e lê o perfil autorizado pela política RLS. O cargo não é escolhido no login e não usa `user_metadata`, pois esse campo pode ser alterado pelo próprio usuário.
 
 Novos cadastros públicos sempre recebem o cargo `student`. Professores e administradores são definidos por uma operação privilegiada no backend. A primeira conta administrativa precisa ser promovida manualmente no SQL Editor, conforme o README.
 
@@ -28,6 +28,8 @@ O modelo usa tabelas separadas para:
 - aprendizagem: `lesson_progress`, `question_attempts` e `student_difficulties`;
 - questões: `questions`.
 
+O schema privado também mantém `login_rate_limits`, com hashes HMAC de conta e rede. As funções que consultam ou alteram esses contadores são exclusivas do backend.
+
 O painel docente acrescenta `classes`, `class_students`, `learning_contents` e `pedagogical_recommendations`. A turma é uma organização de trabalho: remover um vínculo não apaga o histórico do estudante.
 
 Tentativas são armazenadas como eventos imutáveis. Dificuldades são um resumo atualizado para selecionar rapidamente o próximo nível.
@@ -40,6 +42,8 @@ Todas as tabelas do schema público têm RLS. O papel `anon` não recebe acesso 
 - professor consulta estudantes que tenham vínculo explícito com ele;
 - administradora cria contas pelo FastAPI;
 - a chave secreta do Supabase existe somente no backend.
+
+O login bloqueia a conta na quarta falha por quinze minutos. O IP informado pelo proxy só é aceito quando a conexão vem de uma rede declarada em `TRUSTED_PROXY_CIDRS`.
 
 ## Inteligência artificial
 
