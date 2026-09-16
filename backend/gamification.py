@@ -89,3 +89,17 @@ def build_gamification_summary(
         "current_streak": current_streak,
         "achievements": achievements,
     }
+
+
+def can_feature_achievement(summary: dict[str, object], achievement_id: str | None) -> bool:
+    """Confere no servidor se a insígnia escolhida já foi conquistada."""
+
+    if achievement_id is None:
+        return True
+    achievements = summary.get("achievements", [])
+    if not isinstance(achievements, list):
+        return False
+    return any(
+        isinstance(achievement, dict) and achievement.get("id") == achievement_id
+        for achievement in achievements
+    )

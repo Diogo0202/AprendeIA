@@ -18,7 +18,7 @@ O PostgreSQL do Supabase usa dois schemas:
 | Gamificação | `student_activity_days` | Dias com atividade do aluno. |
 | Professor | `classes`, `class_students`, `learning_contents`, `pedagogical_recommendations` | Turmas, materiais e orientações. |
 | Alertas | `difficulty_alerts`, `weekly_summary_runs` | Casos de dificuldade e controle do resumo semanal. |
-| Segurança | `private.login_rate_limits` | Hashes e bloqueios temporários do login. |
+| Segurança | `private.login_rate_limits`, `private.api_rate_limits` | Bloqueios do login e limites por operação autenticada. |
 
 ## Relações importantes
 
@@ -40,6 +40,7 @@ As políticas usam `auth.uid()` e funções privadas para repetir no banco as re
 - `public.reserve_login_attempt()` — reserva a tentativa da conta antes da autenticação;
 - `public.record_login_failure()` — incrementa com trava de linha;
 - `public.clear_login_failures()` — limpa falhas após login correto.
+- `public.reserve_api_request()` — reserva atomicamente uma operação autenticada antes da execução.
 
 As três funções de limite aceitam somente hashes no formato SHA-256 e só concedem execução a `service_role`.
 
@@ -55,7 +56,11 @@ As três funções de limite aceitam somente hashes no formato SHA-256 e só con
 8. `20260913143000_login_rate_limit.sql`
 9. `20260913150000_login_rate_limit_policy.sql`
 10. `20260913153000_login_attempt_reservation.sql`
+11. `20260914183000_student_profile_personalization.sql`
+12. `20260915120000_api_security_hardening.sql`
 
 ## Estado confirmado
 
 As três migrations de limite de login foram aplicadas ao projeto Supabase do AprendeIA. Um teste transacional confirmou quatro reservas válidas, bloqueio antes da quinta tentativa e tempo de espera positivo sem manter dados de teste.
+
+A migration de segurança da API foi criada e validada localmente, mas ainda precisa ser aplicada no Supabase. Ela revoga leitura direta do banco de questões e escrita direta em tentativas e progresso, além de criar o contador das operações autenticadas.

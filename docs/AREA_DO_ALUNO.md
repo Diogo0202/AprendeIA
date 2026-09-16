@@ -2,7 +2,7 @@
 
 ## O que o aluno encontra
 
-- Perfil com nome, série e avatar.
+- Perfil com nome, série, avatar personalizável, insígnia em destaque e tema de cor.
 - Lista de matérias e módulos.
 - Quantidade de aulas concluídas e restantes.
 - Dificuldade atual por conteúdo.
@@ -38,6 +38,7 @@ As conquistas levam em conta consistência, quantidade de atividades e acertos. 
 - `question_attempts` — respostas e tempo;
 - `student_difficulties` — resumo por matéria e tópico;
 - `student_activity_days` — dias usados na sequência e nas conquistas.
+- `profiles` — avatar, insígnia em destaque, tema e conclusão da configuração.
 
 ## Limites de acesso
 
@@ -49,3 +50,4 @@ O aluno consulta dados usando o ID do token, não um ID digitado na URL. Ele nã
 - `backend/main.py` — rotas `/student/*` e rotas de prática.
 - `backend/gamification.py` — cálculo de pontos e conquistas.
 - `supabase/migrations/20260908170000_student_gamification.sql` — registro dos dias ativos.
+- `supabase/migrations/20260914183000_student_profile_personalization.sql` — preferências visuais protegidas.

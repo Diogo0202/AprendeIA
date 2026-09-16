@@ -3,7 +3,11 @@
 import unittest
 from datetime import date
 
-from backend.gamification import build_gamification_summary, calculate_current_streak
+from backend.gamification import (
+    build_gamification_summary,
+    calculate_current_streak,
+    can_feature_achievement,
+)
 
 
 class GamificationSummaryTests(unittest.TestCase):
@@ -40,6 +44,19 @@ class GamificationSummaryTests(unittest.TestCase):
         )
 
         self.assertEqual(streak, 3)
+
+    def test_only_allows_an_unlocked_achievement_to_be_featured(self):
+        summary = build_gamification_summary(
+            completed_lessons=1,
+            correct_answers=2,
+            attempts=4,
+            active_days=1,
+            current_streak=1,
+        )
+
+        self.assertTrue(can_feature_achievement(summary, "first_lesson"))
+        self.assertTrue(can_feature_achievement(summary, None))
+        self.assertFalse(can_feature_achievement(summary, "excellent_accuracy"))
 
 
 if __name__ == "__main__":

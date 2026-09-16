@@ -1,15 +1,17 @@
 import os
 import sys
 import unittest
-from unittest.mock import patch
+from pathlib import Path
+from unittest.mock import MagicMock, patch
 
 from fastapi import HTTPException
+from fastapi.testclient import TestClient
 from pydantic import ValidationError
 from supabase.lib.client_options import SyncClientOptions
 
 sys.path.insert(0, os.path.dirname(__file__))
 
-from main import TeacherApproval, QuestionRequest, UserCreate, app, current_user, database, hide_question_solution, require_role, sanitize_prompt_value
+from main import StudentProfilePersonalization, TeacherApproval, QuestionRequest, UserCreate, app, current_user, database, enforce_api_rate_limit, hide_question_solution, require_role, sanitize_prompt_value
 
 
 class SecurityBoundaryTests(unittest.TestCase):
@@ -63,6 +65,47 @@ class SecurityBoundaryTests(unittest.TestCase):
         self.assertNotIn("/docs", public_paths)
         self.assertNotIn("/openapi.json", public_paths)
 
+    def test_api_responses_receive_security_headers(self):
+        """Até uma resposta de erro deve impedir cache, iframe e interpretação solta."""
+
+        with patch.dict(os.environ, {}, clear=True):
+            response = TestClient(app).get("/health")
+
+        self.assertEqual(response.status_code, 503)
+        self.assertEqual(response.headers["cache-control"], "no-store")
+        self.assertEqual(response.headers["x-content-type-options"], "nosniff")
+        self.assertEqual(response.headers["x-frame-options"], "DENY")
+        self.assertIn("frame-ancestors 'none'", response.headers["content-security-policy"])
+
+    def test_api_rate_limit_returns_retry_after(self):
+        """Quando a janela esgota, a operação para antes de gerar custo ou escrita."""
+
+        db = MagicMock()
+        db.rpc.return_value.execute.return_value.data = [
+            {"allowed": False, "request_count": 10, "retry_after_seconds": 75}
+        ]
+
+        with self.assertRaises(HTTPException) as error:
+            enforce_api_rate_limit(db, "00000000-0000-0000-0000-000000000001", "generate_question")
+
+        self.assertEqual(error.exception.status_code, 429)
+        self.assertEqual(error.exception.headers["Retry-After"], "75")
+
+    def test_security_migration_closes_direct_answer_and_score_access(self):
+        """A chave pública não pode ler gabarito nem forjar tentativas e progresso."""
+
+        migration = (
+            Path(__file__).resolve().parents[1]
+            / "supabase"
+            / "migrations"
+            / "20260915120000_api_security_hardening.sql"
+        ).read_text(encoding="utf-8")
+
+        self.assertIn("revoke select on public.questions from authenticated", migration)
+        self.assertIn("revoke insert on public.question_attempts from authenticated", migration)
+        self.assertIn("revoke insert, update on public.lesson_progress from authenticated", migration)
+        self.assertIn("reserve_api_request", migration)
+
     def test_teacher_creation_requires_a_subject_assignment(self):
         """A administradora não deve criar professor que enxerga uma turma sem matéria."""
         with self.assertRaises(ValidationError):
@@ -109,6 +152,26 @@ class SecurityBoundaryTests(unittest.TestCase):
         paths = {route.path for route in app.routes}
 
         self.assertIn("/student/gamification", paths)
+        with self.assertRaises(HTTPException) as error:
+            require_role("student")({"role": "teacher"})
+
+        self.assertEqual(error.exception.status_code, 403)
+
+    def test_profile_personalization_rejects_arbitrary_visual_values(self):
+        """O navegador não pode gravar CSS ou nomes de avatar inventados."""
+
+        with self.assertRaises(ValidationError):
+            StudentProfilePersonalization(
+                avatar_key="url-javascript",
+                featured_badge_id=None,
+                accent_theme="transparent",
+            )
+
+    def test_profile_personalization_endpoint_is_student_only(self):
+        """Professor e administração não usam a rota destinada ao estudante."""
+
+        paths = {route.path for route in app.routes}
+        self.assertIn("/student/profile-personalization", paths)
         with self.assertRaises(HTTPException) as error:
             require_role("student")({"role": "teacher"})
 

@@ -40,9 +40,17 @@ Copie `frontend/.env.example` para `frontend/.env.local`:
 
 - `VITE_SUPABASE_URL`;
 - `VITE_SUPABASE_PUBLISHABLE_KEY`;
-- `VITE_API_URL`.
+- `VITE_API_URL`;
+- `VITE_ENABLE_CLARITY=false`;
+- `VITE_CLARITY_PROJECT_ID` vazio por padrão.
 
 Somente a chave publicável entra no frontend.
+
+O Clarity é opcional e deve continuar desativado no ambiente dos estudantes. A
+Microsoft informa que o serviço não deve ser usado em sites e aplicativos
+direcionados a menores de 18 anos. Para uma demonstração restrita a adultos,
+preencha o ID público, altere a flag para `true` e mantenha o consentimento e o
+mascaramento já implementados no frontend.
 
 ## Railway
 
@@ -57,12 +65,21 @@ Depois de publicar o frontend, coloque sua URL exata em `FRONTEND_URL` no servi�
 
 Para reconhecer o IP do usuário atrás do Railway, configure `TRUSTED_PROXY_CIDRS` somente com a rede interna confirmada para o proxy. O código lê `X-Real-IP` apenas nesse caso.
 
+### Ordem da atualização de segurança
+
+1. Aplicar `20260914183000_student_profile_personalization.sql`.
+2. Aplicar `20260915120000_api_security_hardening.sql`.
+3. Publicar o backend.
+4. Publicar o frontend.
+
+O banco deve vir primeiro porque o backend falha fechado quando a função `reserve_api_request` ainda não existe. O novo frontend passa a entregar CSP e os demais cabeçalhos pelo Nginx.
+
 ## Checklist antes do deploy
 
 1. Executar `python -m unittest discover -s backend -v` na raiz.
 2. Executar `npm run build` em `frontend`.
 3. Confirmar que `.env`, `.env.local` e chaves não aparecem no `git diff`.
-4. Confirmar migrations aplicadas no Supabase.
+4. Confirmar todas as migrations aplicadas no Supabase, principalmente as duas de 14 e 15 de setembro.
 5. Configurar `RATE_LIMIT_PEPPER`, OpenAI, SMTP e segredo semanal no Railway.
 6. Testar login correto, quatro senhas erradas e retorno `429`.
 7. Testar uma conta de cada cargo.
@@ -70,4 +87,4 @@ Para reconhecer o IP do usuário atrás do Railway, configure `TRUSTED_PROXY_CID
 
 ## Estado atual
 
-O código e as migrations do limite de login estão implementados. O deploy da nova versão ainda depende de commit/push e da atualização das variáveis no Railway; este documento não trata mudanças locais como publicação concluída.
+O código e as migrations do limite de login e da API estão implementados. A migration de segurança da API ainda não foi aplicada e o deploy da nova versão ainda depende de commit/push; este documento não trata mudanças locais como publicação concluída.

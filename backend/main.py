@@ -6,6 +6,7 @@ servidor. O frontend usa apenas a chave publicável do Supabase.
 """
 
 import json
+import logging
 import os
 import re
 import smtplib
@@ -14,7 +15,7 @@ import uuid
 from collections import defaultdict
 from datetime import date, datetime, timedelta, timezone
 from email.message import EmailMessage
-from typing import Annotated, Any
+from typing import Annotated, Any, Literal
 from zoneinfo import ZoneInfo
 
 from dotenv import load_dotenv
@@ -43,7 +44,11 @@ from difficulty_alerts import (
     is_high_difficulty,
     is_valid_cron_secret,
 )
-from gamification import build_gamification_summary, calculate_current_streak
+from gamification import (
+    build_gamification_summary,
+    calculate_current_streak,
+    can_feature_achievement,
+)
 from teacher_dashboard import (
     build_difficulty_trend,
     build_report_csv,
@@ -62,9 +67,26 @@ app.add_middleware(
     CORSMiddleware,
     allow_origins=[os.getenv("FRONTEND_URL", "http://localhost:5173")],
     allow_credentials=True,
-    allow_methods=["GET", "POST", "DELETE", "OPTIONS"],
+    allow_methods=["GET", "POST", "PUT", "DELETE", "OPTIONS"],
     allow_headers=["Authorization", "Content-Type"],
 )
+
+logger = logging.getLogger("aprendeia")
+
+
+@app.middleware("http")
+async def add_security_headers(request: Request, call_next):
+    """Evita cache e reduz ataques comuns contra respostas da API."""
+
+    response = await call_next(request)
+    response.headers.setdefault("Cache-Control", "no-store")
+    response.headers.setdefault("X-Content-Type-Options", "nosniff")
+    response.headers.setdefault("X-Frame-Options", "DENY")
+    response.headers.setdefault("Referrer-Policy", "no-referrer")
+    response.headers.setdefault("Permissions-Policy", "camera=(), microphone=(), geolocation=()")
+    response.headers.setdefault("Content-Security-Policy", "default-src 'none'; frame-ancestors 'none'")
+    response.headers.setdefault("Strict-Transport-Security", "max-age=31536000; includeSubDomains")
+    return response
 
 # O schema estrito garante que a IA sempre devolva quatro alternativas e os
 # campos necessários para corrigir e explicar a resposta.
@@ -180,6 +202,19 @@ class AnswerRequest(BaseModel):
 
     selected_index: int = Field(ge=0, le=3)
     response_time_seconds: int = Field(default=0, ge=0, le=7200)
+
+
+class StudentProfilePersonalization(BaseModel):
+    """Escolhas visuais fechadas para não aceitar CSS ou valores arbitrários."""
+
+    avatar_key: Literal["orbit", "spark", "books", "prism", "trail"]
+    featured_badge_id: Literal[
+        "first_lesson",
+        "study_streak",
+        "ten_correct_answers",
+        "excellent_accuracy",
+    ] | None = None
+    accent_theme: Literal["wine", "ocean", "forest", "amber"]
 
 
 class TeacherClassCreate(BaseModel):
@@ -487,6 +522,59 @@ def require_role(*roles: str):
             raise HTTPException(status_code=403, detail="Você não tem permissão para esta operação.")
         return user
     return dependency
+
+
+# Limites menores ficam nas ações que geram custo ou alteram dados importantes.
+# A contagem real acontece no PostgreSQL, então continua valendo se o Railway
+# iniciar mais de uma cópia do backend.
+API_RATE_LIMITS: dict[str, tuple[int, int]] = {
+    "answer_question": (120, 15 * 60),
+    "generate_question": (10, 60 * 60),
+    "profile_personalization": (30, 60 * 60),
+    "teacher_class_write": (60, 60 * 60),
+    "teacher_content_write": (30, 60 * 60),
+    "teacher_content_import": (10, 60 * 60),
+    "teacher_recommendation": (10, 60 * 60),
+    "admin_user_write": (30, 60 * 60),
+}
+
+
+def enforce_api_rate_limit(db: Client, user_id: str, action: str) -> None:
+    """Reserva uma chamada antes de executar a operação protegida."""
+
+    if action not in API_RATE_LIMITS:
+        raise RuntimeError("Ação sem política de limite configurada.")
+    max_requests, window_seconds = API_RATE_LIMITS[action]
+    try:
+        data = (
+            db.rpc(
+                "reserve_api_request",
+                {
+                    "p_actor_id": user_id,
+                    "p_action": action,
+                    "p_max_requests": max_requests,
+                    "p_window_seconds": window_seconds,
+                },
+            )
+            .execute()
+            .data
+        )
+        row = data[0] if isinstance(data, list) and data else data
+        if not isinstance(row, dict) or not isinstance(row.get("allowed"), bool):
+            raise ValueError("Resposta inválida do contador")
+        if not row["allowed"]:
+            retry_after = max(1, int(row.get("retry_after_seconds", 1)))
+            raise HTTPException(
+                status_code=429,
+                detail="Limite de solicitações atingido. Aguarde antes de tentar novamente.",
+                headers={"Retry-After": str(retry_after), "Cache-Control": "no-store"},
+            )
+    except HTTPException:
+        raise
+    except Exception as error:
+        # Falhar fechado impede que uma indisponibilidade no contador libere
+        # chamadas caras sem proteção.
+        raise HTTPException(status_code=503, detail="Proteção de uso temporariamente indisponível.") from error
 
 
 # O alias deixa explícito que as rotas abaixo compartilham a mesma barreira.
@@ -834,6 +922,7 @@ def generate_question(request: QuestionRequest, user: TeacherUser):
     assignment = db.table("teacher_subjects").select("subject_id").eq("teacher_id", user["id"]).limit(1).execute().data
     if not assignment or assignment[0]["subject_id"] != subjects[0]["id"]:
         raise HTTPException(status_code=403, detail="Professor não pode criar questões para outra disciplina.")
+    enforce_api_rate_limit(db, user["id"], "generate_question")
     question = generate_with_ai(request)
     payload = {**question, "subject_id": subjects[0]["id"], "source": "openai"}
     payload.pop("id", None); payload.pop("subject", None); payload.pop("skill", None)
@@ -883,6 +972,7 @@ def answer_question(question_id: str, answer: AnswerRequest, user: dict = Depend
         result["difficulty"] = "advanced" if accuracy >= .8 and result["attempts"] >= 3 else "basic" if accuracy < .6 else "intermediate"
         return {"correct": correct, "correct_index": question["correct_index"], "explanation": question["explanation"], "next_difficulty": result["difficulty"], "accuracy": round(accuracy * 100)}
     db = database()
+    enforce_api_rate_limit(db, user["id"], "answer_question")
     rows = db.table("questions").select("id,subject_id,topic,correct_index,explanation,subjects(name)").eq("id", question_id).limit(1).execute().data
     if not rows:
         raise HTTPException(status_code=404, detail="Questão não encontrada.")
@@ -911,9 +1001,9 @@ def answer_question(question_id: str, answer: AnswerRequest, user: dict = Depend
             accuracy_percent=accuracy_percent,
             attempts=len(attempts),
         )
-    except Exception:
+    except Exception as error:
         # A resposta do aluno já foi salva; problema no aviso não pode apagar a atividade.
-        pass
+        logger.warning("Não foi possível sincronizar o alerta de dificuldade: %s", type(error).__name__)
     return {"correct": correct, "correct_index": question["correct_index"], "explanation": question["explanation"], "next_difficulty": next_level, "accuracy": round(accuracy_percent)}
 
 
@@ -938,18 +1028,23 @@ def student_gamification(user: dict = Depends(require_role("student"))):
             active_days=4,
             current_streak=3,
         )
-    db = database()
+    return build_student_gamification(database(), user["id"])
+
+
+def build_student_gamification(db: Client, student_id: str) -> dict[str, object]:
+    """Centraliza o cálculo usado pelo painel e pela validação da insígnia."""
+
     completed_response = (
         db.table("lesson_progress")
         .select("lesson_id", count="exact")
-        .eq("student_id", user["id"])
+        .eq("student_id", student_id)
         .eq("completed", True)
         .execute()
     )
     attempts = (
         db.table("question_attempts")
         .select("correct")
-        .eq("student_id", user["id"])
+        .eq("student_id", student_id)
         .limit(10000)
         .execute()
         .data
@@ -957,7 +1052,7 @@ def student_gamification(user: dict = Depends(require_role("student"))):
     activity_rows = (
         db.table("student_activity_days")
         .select("activity_date")
-        .eq("student_id", user["id"])
+        .eq("student_id", student_id)
         .order("activity_date", desc=True)
         .limit(365)
         .execute()
@@ -971,6 +1066,40 @@ def student_gamification(user: dict = Depends(require_role("student"))):
         active_days=len(activity_days),
         current_streak=calculate_current_streak(activity_days, today=datetime.now(ZoneInfo("America/Sao_Paulo")).date()),
     )
+
+
+@app.put("/student/profile-personalization")
+def update_student_profile_personalization(
+    personalization: StudentProfilePersonalization,
+    user: dict = Depends(require_role("student")),
+):
+    """Salva somente no perfil atual e recusa uma insígnia ainda bloqueada."""
+
+    db = database()
+    enforce_api_rate_limit(db, user["id"], "profile_personalization")
+    summary = build_student_gamification(db, user["id"])
+    if not can_feature_achievement(summary, personalization.featured_badge_id):
+        raise HTTPException(
+            status_code=400,
+            detail="Essa insígnia ainda não foi desbloqueada.",
+        )
+    values = {
+        "avatar_key": personalization.avatar_key,
+        "featured_badge_id": personalization.featured_badge_id,
+        "accent_theme": personalization.accent_theme,
+        "profile_setup_complete": True,
+        "updated_at": datetime.now(timezone.utc).isoformat(),
+    }
+    updated = (
+        db.table("profiles")
+        .update(values)
+        .eq("id", user["id"])
+        .execute()
+        .data
+    )
+    if not updated:
+        raise HTTPException(status_code=404, detail="Perfil não encontrado.")
+    return values
 
 
 @app.get("/teacher/students")
@@ -1096,6 +1225,7 @@ def create_teacher_class(payload: TeacherClassCreate, user: TeacherUser):
 
     db = database()
     assignment = teacher_assignment(db, user["id"])
+    enforce_api_rate_limit(db, user["id"], "teacher_class_write")
     duplicate = (
         db.table("classes")
         .select("id")
@@ -1150,6 +1280,7 @@ def add_class_student(class_id: str, payload: ClassStudentCreate, user: TeacherU
 
     db = database()
     classroom = owned_teacher_class(db, user["id"], class_id)
+    enforce_api_rate_limit(db, user["id"], "teacher_class_write")
     profiles = (
         db.table("profiles")
         .select("id,full_name,grade,email,role")
@@ -1186,6 +1317,7 @@ def remove_class_student(class_id: str, student_id: str, user: TeacherUser):
 
     db = database()
     owned_teacher_class(db, user["id"], class_id)
+    enforce_api_rate_limit(db, user["id"], "teacher_class_write")
     membership = db.table("class_students").select("student_id").eq("class_id", class_id).eq("student_id", student_id).limit(1).execute().data
     if not membership:
         raise HTTPException(status_code=404, detail="Estudante não está nesta turma.")
@@ -1232,6 +1364,7 @@ def list_teacher_contents(user: TeacherUser):
 
     db = database()
     assignment = teacher_assignment(db, user["id"])
+    enforce_api_rate_limit(db, user["id"], "teacher_content_write")
     return (
         db.table("learning_contents")
         .select("id,title,description,content_type,source_url,created_at")
@@ -1268,6 +1401,7 @@ def import_teacher_contents(payload: TeacherContentImport, user: TeacherUser):
         raise HTTPException(status_code=422, detail=str(error)) from error
     db = database()
     assignment = teacher_assignment(db, user["id"])
+    enforce_api_rate_limit(db, user["id"], "teacher_content_import")
     records = [{"teacher_id": user["id"], "subject_id": assignment["subject_id"], **row} for row in rows]
     created = db.table("learning_contents").insert(records).execute().data
     return {"imported": len(created), "contents": created}
@@ -1283,6 +1417,7 @@ def generate_teacher_recommendation(payload: RecommendationRequest, user: Teache
     allowed_ids = [row["student_id"] for row in memberships]
     if payload.student_id and payload.student_id not in allowed_ids:
         raise HTTPException(status_code=404, detail="Estudante não encontrado nesta turma.")
+    enforce_api_rate_limit(db, user["id"], "teacher_recommendation")
     selected_ids = [payload.student_id] if payload.student_id else allowed_ids
     summaries = teacher_student_summaries(db, classroom["subject_id"], selected_ids)
     metrics = [
@@ -1357,6 +1492,7 @@ def approve_teacher_registration(
     """Promove a solicitação em uma transação que também prende a disciplina."""
 
     db = database()
+    enforce_api_rate_limit(db, _admin["id"], "admin_user_write")
     request_rows = (
         db.table("profiles")
         .select("id,email,full_name,registration_status")
@@ -1404,6 +1540,7 @@ def create_user(payload: UserCreate, _admin: dict = Depends(require_role("admin"
     if not supabase_configured():
         return {"name": payload.name, "email": payload.email, "role": payload.role, "subject": payload.subject}
     db = database()
+    enforce_api_rate_limit(db, _admin["id"], "admin_user_write")
     subject_id: str | None = None
     if payload.role == "teacher":
         subject_rows = db.table("subjects").select("id").eq("name", payload.subject).limit(1).execute().data
@@ -1429,8 +1566,11 @@ def create_user(payload: UserCreate, _admin: dict = Depends(require_role("admin"
             # virar uma estudante sem querer ou uma professora sem disciplina.
             try:
                 db.auth.admin.delete_user(created_user_id)
-            except Exception:
-                pass
+            except Exception as cleanup_error:
+                logger.error(
+                    "Não foi possível remover a conta incompleta após falha no cadastro: %s",
+                    type(cleanup_error).__name__,
+                )
         raise HTTPException(status_code=400, detail="Não foi possível criar o usuário. Verifique se o e-mail já está cadastrado.") from error
 
 

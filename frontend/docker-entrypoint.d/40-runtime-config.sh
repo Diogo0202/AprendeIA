@@ -1,8 +1,8 @@
 #!/bin/sh
 set -eu
 
-# Só valores públicos entram neste arquivo: URL da API, URL do Supabase e chave
-# publishable. Chaves secretas nunca devem aparecer em um bundle do navegador.
+# Só valores públicos entram neste arquivo. Chaves secretas nunca devem aparecer
+# em um bundle do navegador; o ID do Clarity também não concede acesso ao painel.
 escape_js() {
   printf '%s' "$1" | sed -e 's/\\/\\\\/g' -e 's/"/\\"/g' -e ':a;N;$!ba;s/\n/\\n/g'
 }
@@ -11,6 +11,8 @@ cat > /usr/share/nginx/html/runtime-config.js <<EOF
 window.__APP_CONFIG__ = Object.freeze({
   SUPABASE_URL: "$(escape_js "${VITE_SUPABASE_URL:-}")",
   SUPABASE_PUBLISHABLE_KEY: "$(escape_js "${VITE_SUPABASE_PUBLISHABLE_KEY:-}")",
-  API_URL: "$(escape_js "${VITE_API_URL:-}")"
+  API_URL: "$(escape_js "${VITE_API_URL:-}")",
+  ENABLE_CLARITY: "$(escape_js "${VITE_ENABLE_CLARITY:-false}")",
+  CLARITY_PROJECT_ID: "$(escape_js "${VITE_CLARITY_PROJECT_ID:-}")"
 });
 EOF

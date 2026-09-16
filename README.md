@@ -9,6 +9,7 @@ O **AprendeIA** é um protótipo de plataforma de reforço escolar que combina R
 - 🔐 Login por e-mail e senha com Supabase Auth e bloqueio após quatro falhas.
 - 👩‍🎓 Perfil do estudante com matérias, progresso, aulas restantes e dificuldades.
 - 🏆 Jornada gamificada com XP, níveis, sequência de estudos e insígnias por consistência e acertos.
+- 🎨 Perfil personalizável com avatar, insígnia conquistada e cor de destaque.
 - 🧩 Questões geradas por IA com níveis básico, intermediário e avançado.
 - 💡 Correção com explicações para transformar erro em aprendizado.
 - 👨‍🏫 Dashboard do professor com turmas, histórico, gráficos, relatórios e conteúdos, sem alterar os dados dos estudantes.
@@ -78,6 +79,8 @@ Crie `frontend/.env.local` a partir de `frontend/.env.example`:
 VITE_SUPABASE_URL=https://seu-projeto.supabase.co
 VITE_SUPABASE_PUBLISHABLE_KEY=sb_publishable_...
 VITE_API_URL=http://localhost:8000
+VITE_ENABLE_CLARITY=false
+VITE_CLARITY_PROJECT_ID=
 ```
 
 Depois, abra `http://localhost:5173`. Para gerar uma versão de produção:
@@ -143,11 +146,12 @@ As regras são verificadas na API e também no banco com políticas RLS. Assim, 
 | `POST` | `/auth/login` | Autentica e bloqueia a conta após quatro falhas em quinze minutos |
 | `GET` | `/health` | Verifica se a API está disponível para um usuário autenticado |
 | `GET` | `/question-bank` | Lista questões permitidas ao usuário |
-| `POST` | `/question-bank/generate` | Gera uma questão para professor ou administração |
+| `POST` | `/question-bank/generate` | Gera uma questão para o professor da disciplina |
 | `GET` | `/question-bank/next` | Escolhe a próxima questão do estudante |
 | `POST` | `/question-bank/{question_id}/answer` | Corrige uma resposta e atualiza o desempenho |
 | `GET` | `/student/subjects` | Mostra as matérias do próprio estudante |
 | `GET` | `/student/gamification` | Mostra o XP, nível, sequência e conquistas do próprio estudante |
+| `PUT` | `/student/profile-personalization` | Salva avatar, insígnia desbloqueada e tema do próprio estudante |
 | `GET` | `/teacher/students` | Mostra estudantes vinculados ao professor |
 | `GET` | `/teacher/difficulty-alerts` | Mostra alertas ativos da disciplina do professor |
 | `GET/POST` | `/teacher/classes` | Lista ou cria turmas da disciplina atribuída |
@@ -176,6 +180,8 @@ As regras são verificadas na API e também no banco com políticas RLS. Assim, 
    - `supabase/migrations/20260913143000_login_rate_limit.sql`
    - `supabase/migrations/20260913150000_login_rate_limit_policy.sql`
    - `supabase/migrations/20260913153000_login_attempt_reservation.sql`
+   - `supabase/migrations/20260914183000_student_profile_personalization.sql`
+   - `supabase/migrations/20260915120000_api_security_hardening.sql`
 3. Crie sua primeira conta pela interface.
 4. No SQL Editor, promova somente essa conta inicial:
 
@@ -194,18 +200,24 @@ Crie dois serviços usando este mesmo repositório:
 | Serviço | Pasta raiz | Variáveis no Railway |
 | --- | --- | --- |
 | ⚙️ API | `/backend` | `OPENAI_API_KEY`, `OPENAI_MODEL`, `SUPABASE_URL`, `SUPABASE_SECRET_KEY`, `RATE_LIMIT_PEPPER`, `TRUSTED_PROXY_CIDRS`, `FRONTEND_URL`, variáveis SMTP e `WEEKLY_SUMMARY_CRON_SECRET` |
-| 🎨 Interface | `/frontend` | `VITE_SUPABASE_URL`, `VITE_SUPABASE_PUBLISHABLE_KEY`, `VITE_API_URL` |
+| 🎨 Interface | `/frontend` | `VITE_SUPABASE_URL`, `VITE_SUPABASE_PUBLISHABLE_KEY`, `VITE_API_URL`; Clarity opcional com `VITE_ENABLE_CLARITY` e `VITE_CLARITY_PROJECT_ID` |
 
 Os `Dockerfile`s já definem como cada serviço é construído. O frontend monta um `runtime-config.js` quando inicia, então as variáveis `VITE_*` podem ser configuradas no painel do Railway sem entrar no Git.
 
 Quando o Railway gerar a URL da interface, copie-a para `FRONTEND_URL` na API. Isso mantém o CORS fechado apenas para o site do AprendeIA. ✅
+
+O Microsoft Clarity está integrado, mas permanece desligado por padrão. Como a
+plataforma pode atender menores de 18 anos, não ative essa telemetria no ambiente
+dos estudantes. Em uma demonstração exclusiva para adultos, a ativação ainda
+exige consentimento no navegador e todo o conteúdo da aplicação fica mascarado.
 
 Para os alertas, configure o provedor SMTP no serviço da API e agende uma chamada semanal autenticada para o endpoint interno. O passo a passo e as regras de privacidade estão em [docs/ALERTAS_DIFICULDADE.md](docs/ALERTAS_DIFICULDADE.md).
 
 ## 🌟 Próximos passos
 
 - Validar as questões com professores antes de usá-las com estudantes reais.
-- Criar recuperação de senha, CAPTCHA e limites para outras rotas sensíveis.
+- Criar recuperação de senha e CAPTCHA para cadastro, login e recuperação.
+- Expandir os limites de uso conforme as métricas reais do ambiente escolar.
 - Fazer testes completos de RLS com contas de cada perfil.
 - Adicionar monitoramento de erros e disponibilidade após o deploy.
 

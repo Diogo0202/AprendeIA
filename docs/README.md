@@ -1,6 +1,6 @@
 # Documentação do AprendeIA
 
-Este diretório reúne a visão geral do projeto e a explicação de cada área do sistema. Os textos refletem o código e as migrations existentes em 13 de setembro de 2026.
+Este diretório reúne a visão geral do projeto e a explicação de cada área do sistema. Os textos refletem o código e as migrations existentes em 15 de setembro de 2026.
 
 ## Comece por aqui
 

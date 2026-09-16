@@ -1,0 +1,8 @@
+User-agent: *
+Allow: /
+Disallow: /admin/
+Disallow: /student/
+Disallow: /teacher/
+Disallow: /practice/
+
+Sitemap: https://aprendeia-web-production.up.railway.app/sitemap.xml

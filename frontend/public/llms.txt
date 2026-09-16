@@ -1,0 +1,37 @@
+# AprendeIA
+
+> Plataforma educacional adaptativa que usa inteligência artificial para apoiar o aprendizado no ritmo de cada estudante.
+
+## Endereços oficiais
+
+- Aplicativo: https://aprendeia-web-production.up.railway.app/
+- Código-fonte: https://github.com/Diogo0202/AprendeIA
+
+## Recursos do sistema
+
+- Trilhas de aprendizagem organizadas por disciplinas e módulos.
+- Questões personalizadas por matéria e grau de dificuldade.
+- Recomendações de conteúdo baseadas nas dificuldades do estudante.
+- Explicações geradas por inteligência artificial após as atividades.
+- Pontos, níveis e conquistas ligados à consistência e aos acertos.
+- Painel do professor com turmas, evolução, dificuldades e relatórios.
+- Administração de cadastros e cargos.
+
+## Perfis e acesso
+
+- Estudantes acessam somente o próprio progresso e todas as disciplinas disponíveis.
+- Professores visualizam apenas turmas e dificuldades da própria disciplina.
+- Administradores gerenciam os cargos permitidos pelo sistema.
+- Áreas autenticadas, respostas, relatórios e dados pessoais não devem ser indexados.
+
+## Tecnologias
+
+- Frontend: React, TypeScript e Vite.
+- Backend: Python e FastAPI.
+- Dados e autenticação: Supabase com PostgreSQL.
+- Inteligência artificial: OpenAI Responses API.
+- Hospedagem: Railway.
+
+## Uso responsável
+
+O conteúdo gerado por inteligência artificial funciona como apoio pedagógico e pode precisar de revisão do professor. Não solicite, reproduza ou tente inferir dados pessoais de estudantes.
