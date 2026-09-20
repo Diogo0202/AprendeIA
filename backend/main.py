@@ -11,6 +11,7 @@ import os
 import re
 import smtplib
 import ssl
+import time
 import uuid
 from collections import defaultdict
 from datetime import date, datetime, timedelta, timezone
@@ -38,6 +39,7 @@ from auth_security import (
     rate_limit_hash,
     rate_limit_state,
 )
+from captcha import CaptchaError, captcha_configured, verify_turnstile
 from difficulty_alerts import (
     build_immediate_email,
     build_weekly_email,
@@ -48,6 +50,13 @@ from gamification import (
     build_gamification_summary,
     calculate_current_streak,
     can_feature_achievement,
+)
+from learning_engine import (
+    build_study_recommendations,
+    build_topic_mastery,
+    infer_subject_category,
+    subject_code,
+    subject_difficulty,
 )
 from teacher_dashboard import (
     build_difficulty_trend,
@@ -67,17 +76,24 @@ app.add_middleware(
     CORSMiddleware,
     allow_origins=[os.getenv("FRONTEND_URL", "http://localhost:5173")],
     allow_credentials=True,
-    allow_methods=["GET", "POST", "PUT", "DELETE", "OPTIONS"],
-    allow_headers=["Authorization", "Content-Type"],
+    allow_methods=["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
+    allow_headers=["Authorization", "Content-Type", "X-Request-ID"],
 )
 
 logger = logging.getLogger("aprendeia")
+logger.setLevel(os.getenv("LOG_LEVEL", "INFO").upper())
 
 
 @app.middleware("http")
 async def add_security_headers(request: Request, call_next):
-    """Evita cache e reduz ataques comuns contra respostas da API."""
+    """Aplica proteção, correlação e tempo para os logs do Railway."""
 
+    started_at = time.perf_counter()
+    supplied_request_id = request.headers.get("X-Request-ID", "")
+    try:
+        request_id = str(uuid.UUID(supplied_request_id))
+    except ValueError:
+        request_id = str(uuid.uuid4())
     response = await call_next(request)
     response.headers.setdefault("Cache-Control", "no-store")
     response.headers.setdefault("X-Content-Type-Options", "nosniff")
@@ -86,6 +102,24 @@ async def add_security_headers(request: Request, call_next):
     response.headers.setdefault("Permissions-Policy", "camera=(), microphone=(), geolocation=()")
     response.headers.setdefault("Content-Security-Policy", "default-src 'none'; frame-ancestors 'none'")
     response.headers.setdefault("Strict-Transport-Security", "max-age=31536000; includeSubDomains")
+    response.headers.setdefault("X-Request-ID", request_id)
+    duration_ms = round((time.perf_counter() - started_at) * 1000, 2)
+    route = request.scope.get("route")
+    route_path = getattr(route, "path", request.url.path)
+    logger.info(
+        json.dumps(
+            {
+                "event": "http_request",
+                "request_id": request_id,
+                "method": request.method,
+                # O template evita gravar UUIDs de estudantes nos logs.
+                "path": route_path,
+                "status": response.status_code,
+                "duration_ms": duration_ms,
+            },
+            ensure_ascii=False,
+        )
+    )
     return response
 
 # O schema estrito garante que a IA sempre devolva quatro alternativas e os
@@ -133,6 +167,7 @@ class LoginRequest(BaseModel):
 
     email: str = Field(min_length=5, max_length=254, pattern=r"^[^@\s]+@[^@\s]+\.[^@\s]+$")
     password: str = Field(min_length=1, max_length=128)
+    captcha_token: str | None = Field(default=None, max_length=4096)
 
     @field_validator("email")
     @classmethod
@@ -269,6 +304,88 @@ class RecommendationRequest(BaseModel):
 
     class_id: str = Field(min_length=36, max_length=36)
     student_id: str | None = Field(default=None, min_length=36, max_length=36)
+
+
+class LessonProgressUpdate(BaseModel):
+    """Atualização pequena que o estudante envia enquanto avança na aula."""
+
+    completed: bool = False
+    time_seconds: int = Field(default=0, ge=0, le=28_800)
+
+
+class DiagnosticAnswerRequest(AnswerRequest):
+    """Resposta diagnóstica com o mesmo limite usado na prática comum."""
+
+
+class TeacherQuestionReview(BaseModel):
+    """Campos que o professor pode revisar antes de publicar uma questão."""
+
+    topic: str = Field(min_length=2, max_length=100)
+    difficulty: Literal["basic", "intermediate", "advanced"]
+    question: str = Field(min_length=8, max_length=1000)
+    options: list[str] = Field(min_length=4, max_length=4)
+    correct_index: int = Field(ge=0, le=3)
+    explanation: str = Field(min_length=8, max_length=2000)
+    review_notes: str = Field(default="", max_length=1000)
+    status: Literal["draft", "published", "archived"] = "draft"
+
+    @field_validator("topic")
+    @classmethod
+    def clean_question_topic(cls, value: str) -> str:
+        return sanitize_prompt_value(value)
+
+    @field_validator("options")
+    @classmethod
+    def validate_options(cls, values: list[str]) -> list[str]:
+        cleaned = [value.strip() for value in values]
+        if any(not value or len(value) > 300 for value in cleaned):
+            raise ValueError("As quatro alternativas precisam ter texto curto.")
+        if len({value.casefold() for value in cleaned}) != 4:
+            raise ValueError("As alternativas precisam ser diferentes.")
+        return cleaned
+
+
+class AdminSubjectCreate(BaseModel):
+    """Disciplina nova criada pela administração."""
+
+    name: str = Field(min_length=2, max_length=80)
+    description: str = Field(default="", max_length=1000)
+    category: str = Field(default="Outras", min_length=2, max_length=80)
+
+    @field_validator("name", "category")
+    @classmethod
+    def clean_subject_text(cls, value: str) -> str:
+        return sanitize_prompt_value(value, max_length=80)
+
+
+class AdminModuleCreate(BaseModel):
+    title: str = Field(min_length=2, max_length=120)
+    position: int = Field(ge=1, le=1000)
+
+    @field_validator("title")
+    @classmethod
+    def clean_module_title(cls, value: str) -> str:
+        return sanitize_prompt_value(value, max_length=120)
+
+
+class AdminLessonCreate(BaseModel):
+    title: str = Field(min_length=2, max_length=120)
+    position: int = Field(ge=1, le=1000)
+    estimated_minutes: int = Field(default=15, ge=1, le=600)
+    summary: str = Field(default="", max_length=1000)
+    content: str = Field(default="", max_length=30_000)
+    learning_objectives: list[str] = Field(default_factory=list, max_length=10)
+    published: bool = True
+
+    @field_validator("title")
+    @classmethod
+    def clean_lesson_title(cls, value: str) -> str:
+        return sanitize_prompt_value(value, max_length=120)
+
+    @field_validator("learning_objectives")
+    @classmethod
+    def clean_objectives(cls, values: list[str]) -> list[str]:
+        return [sanitize_prompt_value(value, max_length=160) for value in values]
 
 
 def supabase_configured() -> bool:
@@ -529,13 +646,17 @@ def require_role(*roles: str):
 # iniciar mais de uma cópia do backend.
 API_RATE_LIMITS: dict[str, tuple[int, int]] = {
     "answer_question": (120, 15 * 60),
+    "diagnostic_answer": (60, 60 * 60),
+    "lesson_progress": (240, 60 * 60),
     "generate_question": (10, 60 * 60),
+    "teacher_question_write": (60, 60 * 60),
     "profile_personalization": (30, 60 * 60),
     "teacher_class_write": (60, 60 * 60),
     "teacher_content_write": (30, 60 * 60),
     "teacher_content_import": (10, 60 * 60),
     "teacher_recommendation": (10, 60 * 60),
     "admin_user_write": (30, 60 * 60),
+    "admin_content_write": (60, 60 * 60),
 }
 
 
@@ -692,6 +813,10 @@ def serialize_question(row: dict[str, Any]) -> dict[str, Any]:
         "options": row["options"],
         "correct_index": row["correct_index"],
         "explanation": row["explanation"],
+        "status": row.get("status", "published"),
+        "review_notes": row.get("review_notes", ""),
+        "source": row.get("source", "seed"),
+        "created_at": row.get("created_at"),
     }
 
 
@@ -825,6 +950,10 @@ def login(credentials: LoginRequest, request: Request, response: Response):
     """Autentica com limite persistente de quatro falhas por conta."""
 
     db = database()
+    try:
+        verify_turnstile(credentials.captcha_token, client_network(request))
+    except CaptchaError as error:
+        raise HTTPException(status_code=400, detail=str(error)) from error
     identity_hash = rate_limit_hash("identity", credentials.email)
     network_hash = rate_limit_hash("network", client_network(request))
     network_state = login_limit_status(db, network_hash, "network")
@@ -872,11 +1001,43 @@ def login(credentials: LoginRequest, request: Request, response: Response):
     }
 
 
+@app.get("/health/live")
+def liveness():
+    """Sinal mínimo para o Railway saber que o processo está respondendo."""
+
+    return {"status": "ok", "service": "aprendeIA"}
+
+
+@app.get("/health/ready")
+def readiness():
+    """Confirma configuração essencial sem publicar valores sensíveis."""
+
+    if not supabase_configured():
+        raise HTTPException(status_code=503, detail="Banco de dados não configurado.")
+    try:
+        # Esta consulta também confirma que a migration da jornada foi aplicada.
+        database().table("diagnostic_sessions").select("id").limit(1).execute()
+    except Exception as error:
+        raise HTTPException(status_code=503, detail="Banco de dados ainda não está pronto.") from error
+    return {
+        "status": "ready",
+        "service": "aprendeIA",
+        "ai_configured": bool(os.getenv("OPENAI_API_KEY")),
+        "captcha_configured": captcha_configured(),
+    }
+
+
 @app.get("/health")
 def health(_user: dict = Depends(current_user)):
     """Informa se os serviços essenciais estão configurados, sem expor chaves."""
 
-    return {"status": "ok", "service": "aprendeIA", "ai_configured": bool(os.getenv("OPENAI_API_KEY")), "supabase_configured": supabase_configured()}
+    return {
+        "status": "ok",
+        "service": "aprendeIA",
+        "ai_configured": bool(os.getenv("OPENAI_API_KEY")),
+        "supabase_configured": supabase_configured(),
+        "captcha_configured": captcha_configured(),
+    }
 
 
 @app.get("/question-bank")
@@ -898,9 +1059,11 @@ def list_questions(subject: str | None = None, difficulty: str | None = None, us
         if subject and subject != assigned_subject:
             raise HTTPException(status_code=403, detail="Professor não pode consultar outra disciplina.")
         subject = assigned_subject
-    query = database().table("questions").select("id,topic,difficulty,question,options,correct_index,explanation,subjects(name)")
+    query = database().table("questions").select("id,topic,difficulty,question,options,correct_index,explanation,status,review_notes,source,created_at,subjects(name)")
     if difficulty:
         query = query.eq("difficulty", difficulty)
+    if user["role"] == "student":
+        query = query.eq("status", "published")
     rows = query.limit(100).execute().data
     questions = [serialize_question(row) for row in rows]
     filtered = [q for q in questions if not subject or q["subject"] == subject]
@@ -924,11 +1087,71 @@ def generate_question(request: QuestionRequest, user: TeacherUser):
         raise HTTPException(status_code=403, detail="Professor não pode criar questões para outra disciplina.")
     enforce_api_rate_limit(db, user["id"], "generate_question")
     question = generate_with_ai(request)
-    payload = {**question, "subject_id": subjects[0]["id"], "source": "openai"}
+    payload = {
+        **question,
+        "subject_id": subjects[0]["id"],
+        "source": "openai",
+        "status": "draft",
+        "created_by": user["id"],
+    }
     payload.pop("id", None); payload.pop("subject", None); payload.pop("skill", None)
     created = db.table("questions").insert(payload).execute().data[0]
     created["subjects"] = {"name": request.subject}
     return serialize_question(created)
+
+
+@app.get("/teacher/questions")
+def list_teacher_questions(user: TeacherUser):
+    """Abre a fila editorial apenas na disciplina atribuída ao professor."""
+
+    db = database()
+    assignment = teacher_assignment(db, user["id"])
+    rows = (
+        db.table("questions")
+        .select("id,topic,difficulty,question,options,correct_index,explanation,status,review_notes,source,created_at,subjects(name)")
+        .eq("subject_id", assignment["subject_id"])
+        .order("created_at", desc=True)
+        .limit(300)
+        .execute()
+        .data
+    )
+    return [serialize_question(row) for row in rows]
+
+
+@app.patch("/teacher/questions/{question_id}")
+def review_teacher_question(
+    question_id: uuid.UUID,
+    payload: TeacherQuestionReview,
+    user: TeacherUser,
+):
+    """Permite revisão e publicação sem tocar em outra disciplina."""
+
+    db = database()
+    assignment = teacher_assignment(db, user["id"])
+    existing = (
+        db.table("questions")
+        .select("id")
+        .eq("id", str(question_id))
+        .eq("subject_id", assignment["subject_id"])
+        .limit(1)
+        .execute()
+        .data
+    )
+    if not existing:
+        raise HTTPException(status_code=404, detail="Questão não encontrada na sua disciplina.")
+    enforce_api_rate_limit(db, user["id"], "teacher_question_write")
+    updated = (
+        db.table("questions")
+        .update(payload.model_dump())
+        .eq("id", str(question_id))
+        .eq("subject_id", assignment["subject_id"])
+        .execute()
+        .data
+    )
+    if not updated:
+        raise HTTPException(status_code=404, detail="Questão não encontrada na sua disciplina.")
+    updated[0]["subjects"] = {"name": assignment["subject"]}
+    return serialize_question(updated[0])
 
 
 @app.get("/question-bank/next")
@@ -948,9 +1171,9 @@ def next_question(subject: str = "Matemática", user: dict = Depends(require_rol
     subject_id = subject_rows[0]["id"]
     difficulty_rows = db.table("student_difficulties").select("level").eq("student_id", user["id"]).eq("subject_id", subject_id).order("updated_at", desc=True).limit(1).execute().data
     desired = difficulty_rows[0]["level"] if difficulty_rows else "basic"
-    rows = db.table("questions").select("id,topic,difficulty,question,options,correct_index,explanation,subjects(name)").eq("subject_id", subject_id).eq("difficulty", desired).limit(20).execute().data
+    rows = db.table("questions").select("id,topic,difficulty,question,options,correct_index,explanation,status,subjects(name)").eq("subject_id", subject_id).eq("difficulty", desired).eq("status", "published").limit(20).execute().data
     if not rows:
-        rows = db.table("questions").select("id,topic,difficulty,question,options,correct_index,explanation,subjects(name)").eq("subject_id", subject_id).limit(20).execute().data
+        rows = db.table("questions").select("id,topic,difficulty,question,options,correct_index,explanation,status,subjects(name)").eq("subject_id", subject_id).eq("status", "published").limit(20).execute().data
     if not rows:
         raise HTTPException(status_code=404, detail="Ainda não há questões para esta disciplina.")
     return hide_question_solution(serialize_question(rows[0]))
@@ -973,7 +1196,7 @@ def answer_question(question_id: str, answer: AnswerRequest, user: dict = Depend
         return {"correct": correct, "correct_index": question["correct_index"], "explanation": question["explanation"], "next_difficulty": result["difficulty"], "accuracy": round(accuracy * 100)}
     db = database()
     enforce_api_rate_limit(db, user["id"], "answer_question")
-    rows = db.table("questions").select("id,subject_id,topic,correct_index,explanation,subjects(name)").eq("id", question_id).limit(1).execute().data
+    rows = db.table("questions").select("id,subject_id,topic,correct_index,explanation,subjects(name)").eq("id", question_id).eq("status", "published").limit(1).execute().data
     if not rows:
         raise HTTPException(status_code=404, detail="Questão não encontrada.")
     question = rows[0]; correct = answer.selected_index == question["correct_index"]
@@ -1007,13 +1230,477 @@ def answer_question(question_id: str, answer: AnswerRequest, user: dict = Depend
     return {"correct": correct, "correct_index": question["correct_index"], "explanation": question["explanation"], "next_difficulty": next_level, "accuracy": round(accuracy_percent)}
 
 
+def student_subject_catalog(db: Client, student_id: str) -> list[dict[str, Any]]:
+    """Monta disciplina, módulos, aulas e progresso em um contrato único."""
+
+    enrollments = (
+        db.table("enrollments")
+        .select("subject_id")
+        .eq("student_id", student_id)
+        .execute()
+        .data
+    )
+    subject_ids = [row["subject_id"] for row in enrollments]
+    if not subject_ids:
+        return []
+    subject_rows = (
+        db.table("subjects")
+        .select("id,name,description,category")
+        .in_("id", subject_ids)
+        .order("name")
+        .execute()
+        .data
+    )
+    module_rows = (
+        db.table("modules")
+        .select("id,subject_id,title,position")
+        .in_("subject_id", subject_ids)
+        .order("position")
+        .execute()
+        .data
+    )
+    module_ids = [row["id"] for row in module_rows]
+    lesson_rows = (
+        db.table("lessons")
+        .select("id,module_id,title,position,estimated_minutes,summary,learning_objectives,published")
+        .in_("module_id", module_ids)
+        .eq("published", True)
+        .order("position")
+        .execute()
+        .data
+        if module_ids
+        else []
+    )
+    lesson_ids = [row["id"] for row in lesson_rows]
+    progress_rows = (
+        db.table("lesson_progress")
+        .select("lesson_id,completed,time_seconds,last_accessed_at")
+        .eq("student_id", student_id)
+        .in_("lesson_id", lesson_ids)
+        .execute()
+        .data
+        if lesson_ids
+        else []
+    )
+    difficulty_rows = (
+        db.table("student_difficulties")
+        .select("subject_id,topic,level,accuracy,attempts,updated_at")
+        .eq("student_id", student_id)
+        .in_("subject_id", subject_ids)
+        .execute()
+        .data
+    )
+
+    progress_by_lesson = {row["lesson_id"]: row for row in progress_rows}
+    lessons_by_module: dict[str, list[dict[str, Any]]] = defaultdict(list)
+    for lesson in lesson_rows:
+        progress = progress_by_lesson.get(lesson["id"], {})
+        lessons_by_module[lesson["module_id"]].append(
+            {
+                **lesson,
+                "completed": bool(progress.get("completed")),
+                "time_seconds": int(progress.get("time_seconds", 0)),
+                "last_accessed_at": progress.get("last_accessed_at"),
+            }
+        )
+    modules_by_subject: dict[str, list[dict[str, Any]]] = defaultdict(list)
+    for module in module_rows:
+        lessons = lessons_by_module[module["id"]]
+        modules_by_subject[module["subject_id"]].append(
+            {
+                **module,
+                "lessons": lessons,
+                "completed_lessons": sum(1 for lesson in lessons if lesson["completed"]),
+                "total_lessons": len(lessons),
+            }
+        )
+    difficulties_by_subject: dict[str, list[dict[str, Any]]] = defaultdict(list)
+    for difficulty in difficulty_rows:
+        difficulties_by_subject[difficulty["subject_id"]].append(difficulty)
+
+    catalog = []
+    for subject in subject_rows:
+        modules = modules_by_subject[subject["id"]]
+        lessons = [lesson for module in modules for lesson in module["lessons"]]
+        difficulties = difficulties_by_subject[subject["id"]]
+        difficulty = subject_difficulty(difficulties)
+        catalog.append(
+            {
+                **subject,
+                "category": infer_subject_category(subject["name"], subject.get("category")),
+                "code": subject_code(subject["name"]),
+                "modules": modules,
+                "completed_lessons": sum(1 for lesson in lessons if lesson["completed"]),
+                "total_lessons": len(lessons),
+                "remaining_lessons": sum(1 for lesson in lessons if not lesson["completed"]),
+                "difficulty": difficulty["label"],
+                "tone": difficulty["tone"],
+                "topics": sorted(difficulties, key=lambda item: (float(item["accuracy"]), -int(item["attempts"]))),
+            }
+        )
+    return catalog
+
+
+def student_mastery_data(db: Client, student_id: str) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
+    """Combina prática e diagnóstico para recomendar aulas do próprio catálogo."""
+
+    questions = (
+        db.table("questions")
+        .select("id,subject_id,topic,subjects(name)")
+        .limit(5000)
+        .execute()
+        .data
+    )
+    by_question = {row["id"]: row for row in questions}
+    practice = (
+        db.table("question_attempts")
+        .select("question_id,correct,answered_at")
+        .eq("student_id", student_id)
+        .limit(10_000)
+        .execute()
+        .data
+    )
+    diagnostic = (
+        db.table("diagnostic_answers")
+        .select("question_id,correct,answered_at")
+        .eq("student_id", student_id)
+        .limit(1000)
+        .execute()
+        .data
+    )
+    normalized_attempts = []
+    for attempt in [*practice, *diagnostic]:
+        question = by_question.get(attempt["question_id"])
+        if not question:
+            continue
+        normalized_attempts.append(
+            {
+                "subject_id": question["subject_id"],
+                "subject": (question.get("subjects") or {}).get("name", "Disciplina"),
+                "topic": question["topic"],
+                "correct": attempt["correct"],
+            }
+        )
+    mastery = build_topic_mastery(normalized_attempts)
+    catalog = student_subject_catalog(db, student_id)
+    lessons = [
+        {
+            "id": lesson["id"],
+            "subject_id": subject["id"],
+            "subject": subject["name"],
+            "module": module["title"],
+            "title": lesson["title"],
+            "summary": lesson["summary"],
+            "completed": lesson["completed"],
+        }
+        for subject in catalog
+        for module in subject["modules"]
+        for lesson in module["lessons"]
+    ]
+    return mastery, build_study_recommendations(mastery, lessons)
+
+
 @app.get("/student/subjects")
 def student_subjects(user: dict = Depends(require_role("student"))):
-    """Retorna somente as matrículas pertencentes ao estudante atual."""
+    """Entrega o catálogo real somente para o estudante autenticado."""
 
     if not supabase_configured():
-        return [{"name": "Matemática", "completed_lessons": 5, "total_lessons": 8, "difficulty": "Alta"}]
-    return database().table("enrollments").select("subject_id,subjects(id,name,modules(id,title,lessons(id)))").eq("student_id", user["id"]).execute().data
+        return [
+            {
+                "id": "demo-math",
+                "name": "Matemática",
+                "description": "Raciocínio lógico, números e resolução de problemas.",
+                "category": "Ciências Exatas",
+                "code": "MA",
+                "completed_lessons": 1,
+                "total_lessons": 2,
+                "remaining_lessons": 1,
+                "difficulty": "Alta",
+                "tone": "high",
+                "topics": [{"topic": "Frações", "accuracy": 40, "attempts": 5}],
+                "modules": [
+                    {
+                        "id": "demo-module",
+                        "title": "Frações e porcentagens",
+                        "position": 1,
+                        "completed_lessons": 1,
+                        "total_lessons": 2,
+                        "lessons": [
+                            {"id": "demo-lesson-1", "title": "Conceito de fração", "position": 1, "estimated_minutes": 15, "summary": "Entenda as partes de uma fração.", "learning_objectives": [], "completed": True, "time_seconds": 900},
+                            {"id": "demo-lesson-2", "title": "Frações equivalentes", "position": 2, "estimated_minutes": 15, "summary": "Compare frações com o mesmo valor.", "learning_objectives": [], "completed": False, "time_seconds": 0},
+                        ],
+                    }
+                ],
+            }
+        ]
+    return student_subject_catalog(database(), user["id"])
+
+
+@app.get("/student/recommendations")
+def student_recommendations(user: dict = Depends(require_role("student"))):
+    """Explica tópicos dominados, frágeis e as próximas aulas indicadas."""
+
+    if not supabase_configured():
+        mastery = [
+            {"subject_id": "demo-math", "subject": "Matemática", "topic": "Frações", "attempts": 5, "accuracy": 40, "status": "fragile"}
+        ]
+        return {"mastery": mastery, "recommendations": build_study_recommendations(mastery, [])}
+    mastery, recommendations = student_mastery_data(database(), user["id"])
+    return {"mastery": mastery, "recommendations": recommendations}
+
+
+def open_diagnostic_session(db: Client, student_id: str) -> dict[str, Any] | None:
+    """Busca só a avaliação em andamento da pessoa autenticada."""
+
+    rows = (
+        db.table("diagnostic_sessions")
+        .select("id,student_id,question_ids,status,started_at")
+        .eq("student_id", student_id)
+        .eq("status", "open")
+        .limit(1)
+        .execute()
+        .data
+    )
+    return rows[0] if rows else None
+
+
+@app.get("/student/diagnostic")
+def student_diagnostic(user: dict = Depends(require_role("student"))):
+    """Cria a primeira medição com questões publicadas de várias disciplinas."""
+
+    if not supabase_configured():
+        return {
+            "status": "open",
+            "session_id": "demo-diagnostic",
+            "answered_question_ids": [],
+            "questions": [hide_question_solution(question) for question in SEED_QUESTIONS],
+        }
+    db = database()
+    completed = (
+        db.table("diagnostic_sessions")
+        .select("id,completed_at")
+        .eq("student_id", user["id"])
+        .eq("status", "completed")
+        .order("completed_at", desc=True)
+        .limit(1)
+        .execute()
+        .data
+    )
+    if completed:
+        mastery, recommendations = student_mastery_data(db, user["id"])
+        return {
+            "status": "completed",
+            "session_id": completed[0]["id"],
+            "completed_at": completed[0]["completed_at"],
+            "mastery": mastery,
+            "recommendations": recommendations,
+        }
+
+    session = open_diagnostic_session(db, user["id"])
+    if not session:
+        rows = (
+            db.table("questions")
+            .select("id,subject_id,topic,difficulty,question,options,correct_index,explanation,subjects(name)")
+            .eq("status", "published")
+            .order("created_at")
+            .limit(200)
+            .execute()
+            .data
+        )
+        # Duas questões por disciplina deixam a avaliação curta e variada.
+        per_subject: dict[str, int] = defaultdict(int)
+        selected = []
+        for row in rows:
+            if per_subject[row["subject_id"]] >= 2:
+                continue
+            selected.append(row)
+            per_subject[row["subject_id"]] += 1
+            if len(selected) >= 8:
+                break
+        if not selected:
+            raise HTTPException(status_code=409, detail="Ainda não há questões publicadas para a avaliação diagnóstica.")
+        session = (
+            db.table("diagnostic_sessions")
+            .insert({"student_id": user["id"], "question_ids": [row["id"] for row in selected]})
+            .execute()
+            .data[0]
+        )
+        questions = selected
+    else:
+        question_ids = session.get("question_ids") or []
+        questions = (
+            db.table("questions")
+            .select("id,subject_id,topic,difficulty,question,options,correct_index,explanation,subjects(name)")
+            .in_("id", question_ids)
+            .execute()
+            .data
+            if question_ids
+            else []
+        )
+    answers = (
+        db.table("diagnostic_answers")
+        .select("question_id")
+        .eq("session_id", session["id"])
+        .eq("student_id", user["id"])
+        .execute()
+        .data
+    )
+    return {
+        "status": "open",
+        "session_id": session["id"],
+        "answered_question_ids": [row["question_id"] for row in answers],
+        "questions": [hide_question_solution(serialize_question(row)) for row in questions],
+    }
+
+
+@app.post("/student/diagnostic/{question_id}/answer")
+def answer_student_diagnostic(
+    question_id: uuid.UUID,
+    payload: DiagnosticAnswerRequest,
+    user: dict = Depends(require_role("student")),
+):
+    """Registra a medição sem entregar o gabarito durante a avaliação."""
+
+    db = database()
+    enforce_api_rate_limit(db, user["id"], "diagnostic_answer")
+    session = open_diagnostic_session(db, user["id"])
+    if not session or str(question_id) not in (session.get("question_ids") or []):
+        raise HTTPException(status_code=404, detail="Questão não pertence à avaliação atual.")
+    previous = (
+        db.table("diagnostic_answers")
+        .select("id")
+        .eq("session_id", session["id"])
+        .eq("question_id", str(question_id))
+        .limit(1)
+        .execute()
+        .data
+    )
+    if previous:
+        raise HTTPException(status_code=409, detail="Esta questão já foi respondida.")
+    question_rows = (
+        db.table("questions")
+        .select("correct_index")
+        .eq("id", str(question_id))
+        .eq("status", "published")
+        .limit(1)
+        .execute()
+        .data
+    )
+    if not question_rows:
+        raise HTTPException(status_code=404, detail="Questão não encontrada.")
+    db.table("diagnostic_answers").insert(
+        {
+            "session_id": session["id"],
+            "student_id": user["id"],
+            "question_id": str(question_id),
+            "selected_index": payload.selected_index,
+            "correct": payload.selected_index == question_rows[0]["correct_index"],
+            "response_time_seconds": payload.response_time_seconds,
+        }
+    ).execute()
+    answered = (
+        db.table("diagnostic_answers")
+        .select("id", count="exact")
+        .eq("session_id", session["id"])
+        .execute()
+        .count
+        or 0
+    )
+    return {"saved": True, "answered": answered, "total": len(session.get("question_ids") or [])}
+
+
+@app.post("/student/diagnostic/complete")
+def complete_student_diagnostic(user: dict = Depends(require_role("student"))):
+    """Fecha a avaliação só depois de todas as respostas e devolve o mapa real."""
+
+    db = database()
+    session = open_diagnostic_session(db, user["id"])
+    if not session:
+        raise HTTPException(status_code=409, detail="Não existe avaliação diagnóstica em andamento.")
+    answer_count = (
+        db.table("diagnostic_answers")
+        .select("id", count="exact")
+        .eq("session_id", session["id"])
+        .execute()
+        .count
+        or 0
+    )
+    question_count = len(session.get("question_ids") or [])
+    if not question_count or answer_count < question_count:
+        raise HTTPException(status_code=409, detail="Responda todas as questões antes de concluir.")
+    completed_at = datetime.now(timezone.utc).isoformat()
+    db.table("diagnostic_sessions").update(
+        {"status": "completed", "completed_at": completed_at}
+    ).eq("id", session["id"]).eq("student_id", user["id"]).execute()
+    mastery, recommendations = student_mastery_data(db, user["id"])
+    return {
+        "status": "completed",
+        "completed_at": completed_at,
+        "mastery": mastery,
+        "recommendations": recommendations,
+    }
+
+
+@app.get("/student/lessons/{lesson_id}")
+def student_lesson(lesson_id: uuid.UUID, user: dict = Depends(require_role("student"))):
+    """Abre uma aula somente quando a disciplina pertence ao estudante."""
+
+    db = database()
+    rows = (
+        db.table("lessons")
+        .select("id,module_id,title,position,estimated_minutes,summary,content,learning_objectives,published,modules!inner(subject_id,title,subjects(name))")
+        .eq("id", str(lesson_id))
+        .eq("published", True)
+        .limit(1)
+        .execute()
+        .data
+    )
+    if not rows:
+        raise HTTPException(status_code=404, detail="Aula não encontrada.")
+    subject_id = rows[0]["modules"]["subject_id"]
+    enrollment = (
+        db.table("enrollments")
+        .select("student_id")
+        .eq("student_id", user["id"])
+        .eq("subject_id", subject_id)
+        .limit(1)
+        .execute()
+        .data
+    )
+    if not enrollment:
+        raise HTTPException(status_code=404, detail="Aula não encontrada.")
+    progress = (
+        db.table("lesson_progress")
+        .select("completed,time_seconds,last_accessed_at")
+        .eq("student_id", user["id"])
+        .eq("lesson_id", str(lesson_id))
+        .limit(1)
+        .execute()
+        .data
+    )
+    return {**rows[0], "progress": progress[0] if progress else {"completed": False, "time_seconds": 0}}
+
+
+@app.put("/student/lessons/{lesson_id}/progress")
+def update_student_lesson_progress(
+    lesson_id: uuid.UUID,
+    payload: LessonProgressUpdate,
+    user: dict = Depends(require_role("student")),
+):
+    """Salva apenas o progresso da pessoa dona da sessão."""
+
+    db = database()
+    enforce_api_rate_limit(db, user["id"], "lesson_progress")
+    lesson = student_lesson(lesson_id, user)
+    previous = lesson["progress"]
+    values = {
+        "student_id": user["id"],
+        "lesson_id": str(lesson_id),
+        "completed": bool(payload.completed or previous.get("completed")),
+        "time_seconds": max(int(previous.get("time_seconds", 0)), payload.time_seconds),
+        "last_accessed_at": datetime.now(timezone.utc).isoformat(),
+    }
+    return db.table("lesson_progress").upsert(values, on_conflict="student_id,lesson_id").execute().data[0]
 
 
 @app.get("/student/gamification")
@@ -1364,7 +2051,6 @@ def list_teacher_contents(user: TeacherUser):
 
     db = database()
     assignment = teacher_assignment(db, user["id"])
-    enforce_api_rate_limit(db, user["id"], "teacher_content_write")
     return (
         db.table("learning_contents")
         .select("id,title,description,content_type,source_url,created_at")
@@ -1383,6 +2069,7 @@ def create_teacher_content(payload: TeacherContentCreate, user: TeacherUser):
 
     db = database()
     assignment = teacher_assignment(db, user["id"])
+    enforce_api_rate_limit(db, user["id"], "teacher_content_write")
     return (
         db.table("learning_contents")
         .insert({"teacher_id": user["id"], "subject_id": assignment["subject_id"], **payload.model_dump()})
@@ -1462,6 +2149,144 @@ Priorize intervenções que o professor consiga aplicar em aula e uma sugestão 
         .data[0]
     )
     return {**recommendation, "id": saved["id"], "created_at": saved["created_at"]}
+
+
+@app.get("/admin/overview")
+def admin_overview(_admin: dict = Depends(require_role("admin"))):
+    """Resume o sistema sem incluir respostas ou dificuldades individuais."""
+
+    db = database()
+    profiles = db.table("profiles").select("role").limit(10_000).execute().data
+    subjects = db.table("subjects").select("id", count="exact").execute()
+    lessons = db.table("lessons").select("id", count="exact").execute()
+    questions = db.table("questions").select("status").limit(10_000).execute().data
+    return {
+        "users": len(profiles),
+        "students": sum(1 for row in profiles if row["role"] == "student"),
+        "teachers": sum(1 for row in profiles if row["role"] == "teacher"),
+        "admins": sum(1 for row in profiles if row["role"] == "admin"),
+        "subjects": subjects.count or 0,
+        "lessons": lessons.count or 0,
+        "questions": len(questions),
+        "draft_questions": sum(1 for row in questions if row.get("status") == "draft"),
+    }
+
+
+@app.get("/admin/users")
+def list_admin_users(_admin: dict = Depends(require_role("admin"))):
+    """Lista perfis operacionais sem consultar senhas ou tokens do Auth."""
+
+    return (
+        database()
+        .table("profiles")
+        .select("id,full_name,email,role,grade,registration_status,created_at")
+        .order("created_at", desc=True)
+        .limit(500)
+        .execute()
+        .data
+    )
+
+
+def admin_subject_catalog(db: Client) -> list[dict[str, Any]]:
+    """Carrega a árvore editorial completa para a administração."""
+
+    subjects = db.table("subjects").select("id,name,description,category,created_at").order("name").execute().data
+    subject_ids = [row["id"] for row in subjects]
+    modules = db.table("modules").select("id,subject_id,title,position").in_("subject_id", subject_ids).order("position").execute().data if subject_ids else []
+    module_ids = [row["id"] for row in modules]
+    lessons = db.table("lessons").select("id,module_id,title,position,estimated_minutes,summary,content,learning_objectives,published").in_("module_id", module_ids).order("position").execute().data if module_ids else []
+    lessons_by_module: dict[str, list[dict[str, Any]]] = defaultdict(list)
+    for lesson in lessons:
+        lessons_by_module[lesson["module_id"]].append(lesson)
+    modules_by_subject: dict[str, list[dict[str, Any]]] = defaultdict(list)
+    for module in modules:
+        modules_by_subject[module["subject_id"]].append({**module, "lessons": lessons_by_module[module["id"]]})
+    return [{**subject, "modules": modules_by_subject[subject["id"]]} for subject in subjects]
+
+
+@app.get("/admin/subjects")
+def list_admin_subjects(_admin: dict = Depends(require_role("admin"))):
+    return admin_subject_catalog(database())
+
+
+@app.post("/admin/subjects", status_code=201)
+def create_admin_subject(payload: AdminSubjectCreate, admin: dict = Depends(require_role("admin"))):
+    """Cria uma disciplina e matricula estudantes pelo gatilho já existente."""
+
+    db = database()
+    enforce_api_rate_limit(db, admin["id"], "admin_content_write")
+    duplicate = db.table("subjects").select("id").eq("name", payload.name).limit(1).execute().data
+    if duplicate:
+        raise HTTPException(status_code=409, detail="Já existe uma disciplina com esse nome.")
+    return db.table("subjects").insert(payload.model_dump()).execute().data[0]
+
+
+@app.put("/admin/subjects/{subject_id}")
+def update_admin_subject(
+    subject_id: uuid.UUID,
+    payload: AdminSubjectCreate,
+    admin: dict = Depends(require_role("admin")),
+):
+    db = database()
+    enforce_api_rate_limit(db, admin["id"], "admin_content_write")
+    updated = db.table("subjects").update(payload.model_dump()).eq("id", str(subject_id)).execute().data
+    if not updated:
+        raise HTTPException(status_code=404, detail="Disciplina não encontrada.")
+    return updated[0]
+
+
+@app.post("/admin/subjects/{subject_id}/modules", status_code=201)
+def create_admin_module(
+    subject_id: uuid.UUID,
+    payload: AdminModuleCreate,
+    admin: dict = Depends(require_role("admin")),
+):
+    db = database()
+    enforce_api_rate_limit(db, admin["id"], "admin_content_write")
+    subject = db.table("subjects").select("id").eq("id", str(subject_id)).limit(1).execute().data
+    if not subject:
+        raise HTTPException(status_code=404, detail="Disciplina não encontrada.")
+    return db.table("modules").insert({"subject_id": str(subject_id), **payload.model_dump()}).execute().data[0]
+
+
+@app.post("/admin/modules/{module_id}/lessons", status_code=201)
+def create_admin_lesson(
+    module_id: uuid.UUID,
+    payload: AdminLessonCreate,
+    admin: dict = Depends(require_role("admin")),
+):
+    db = database()
+    enforce_api_rate_limit(db, admin["id"], "admin_content_write")
+    module = db.table("modules").select("id").eq("id", str(module_id)).limit(1).execute().data
+    if not module:
+        raise HTTPException(status_code=404, detail="Módulo não encontrado.")
+    return db.table("lessons").insert({"module_id": str(module_id), **payload.model_dump()}).execute().data[0]
+
+
+@app.put("/admin/lessons/{lesson_id}")
+def update_admin_lesson(
+    lesson_id: uuid.UUID,
+    payload: AdminLessonCreate,
+    admin: dict = Depends(require_role("admin")),
+):
+    """Edita ou despublica a aula sem apagar histórico do estudante."""
+
+    db = database()
+    enforce_api_rate_limit(db, admin["id"], "admin_content_write")
+    updated = db.table("lessons").update(payload.model_dump()).eq("id", str(lesson_id)).execute().data
+    if not updated:
+        raise HTTPException(status_code=404, detail="Aula não encontrada.")
+    return updated[0]
+
+
+@app.get("/admin/contents")
+def list_admin_contents(_admin: dict = Depends(require_role("admin"))):
+    """Mostra aulas oficiais e materiais enviados por professores."""
+
+    db = database()
+    lessons = db.table("lessons").select("id,title,summary,published,modules(title,subjects(name))").order("title").limit(1000).execute().data
+    materials = db.table("learning_contents").select("id,title,description,content_type,source_url,created_at,subjects(name),profiles!learning_contents_teacher_id_fkey(full_name)").order("created_at", desc=True).limit(1000).execute().data
+    return {"lessons": lessons, "teacher_materials": materials}
 
 
 @app.get("/admin/teacher-requests")

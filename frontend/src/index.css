@@ -2321,3 +2321,305 @@ select {
     justify-content: flex-end;
   }
 }
+
+/* A verificação ocupa seu espaço real para não deslocar o botão quando carrega. */
+.captcha-field {
+  min-height: 65px;
+  display: grid;
+  align-items: center;
+}
+.captcha-field small {
+  color: #a9122e;
+}
+
+.diagnostic-shell {
+  width: min(100% - 32px, 920px);
+  margin: 0 auto;
+  padding: 64px 0 96px;
+  display: grid;
+  grid-template-columns: minmax(0, 0.75fr) minmax(420px, 1.25fr);
+  gap: 56px;
+  align-items: start;
+}
+.diagnostic-shell > header {
+  position: sticky;
+  top: 28px;
+}
+.diagnostic-shell > header p:not(.eyebrow) {
+  color: var(--ink-soft);
+  line-height: 1.65;
+}
+.diagnostic-shell progress {
+  width: 100%;
+  height: 7px;
+  margin: 28px 0 8px;
+  accent-color: var(--accent);
+}
+.diagnostic-shell header small {
+  color: var(--ink-muted);
+}
+.diagnostic-question {
+  padding: 30px;
+  border-radius: 18px;
+  background: var(--paper);
+  box-shadow: 0 20px 60px rgb(23 34 53 / 8%), 0 0 0 1px var(--line);
+}
+.diagnostic-question > span {
+  color: var(--accent-deep);
+  font-size: 12px;
+  font-weight: 800;
+}
+.diagnostic-question h2 {
+  margin: 14px 0 24px;
+  font-size: 25px;
+  line-height: 1.35;
+}
+.diagnostic-question .primary-button {
+  margin-top: 24px;
+}
+
+.catalog-loading {
+  padding: 14px 16px;
+  border-left: 3px solid var(--accent);
+  color: var(--ink-soft);
+  background: var(--accent-soft);
+}
+.subject-cover.catalog-cover {
+  background: linear-gradient(135deg, var(--accent-deep), var(--accent));
+}
+.subject-cover.catalog-cover.medium {
+  background: linear-gradient(135deg, #87531f, #c27a31);
+}
+.subject-cover.catalog-cover.low {
+  background: linear-gradient(135deg, #235e4a, #469071);
+}
+.subject-cover.catalog-cover.neutral {
+  background: linear-gradient(135deg, #4f5d70, #78869a);
+}
+.recommendation-list {
+  display: grid;
+  gap: 1px;
+  background: var(--line);
+  border-radius: 14px;
+  overflow: hidden;
+  box-shadow: 0 0 0 1px var(--line);
+}
+.recommendation-list article {
+  padding: 20px 22px;
+  background: var(--paper);
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: 24px;
+  align-items: center;
+}
+.recommendation-list article div {
+  display: grid;
+  gap: 5px;
+}
+.recommendation-list article span,
+.recommendation-list article p {
+  color: var(--ink-soft);
+  margin: 0;
+}
+
+.lesson-reader {
+  position: fixed;
+  inset: 0;
+  z-index: 40;
+  padding: 32px;
+  overflow-y: auto;
+  background: rgb(23 34 53 / 55%);
+  backdrop-filter: blur(7px);
+}
+.lesson-reader-panel {
+  width: min(100%, 760px);
+  margin: 0 auto;
+  padding: 38px;
+  border-radius: 18px;
+  background: var(--paper);
+  box-shadow: 0 28px 90px rgb(14 20 31 / 28%);
+}
+.lesson-objectives {
+  padding: 18px 20px;
+  border-radius: 12px;
+  background: var(--accent-soft);
+}
+.lesson-objectives h2 {
+  margin: 0 0 12px;
+  font-size: 18px;
+}
+.lesson-objectives li + li {
+  margin-top: 8px;
+}
+.lesson-content {
+  margin: 30px 0;
+  color: var(--ink);
+  font-size: 17px;
+  line-height: 1.85;
+  white-space: pre-wrap;
+}
+
+.question-studio-grid {
+  display: grid;
+  grid-template-columns: minmax(260px, 0.72fr) minmax(420px, 1.28fr);
+  gap: 18px;
+}
+.question-queue h2,
+.question-generator h3 {
+  margin-top: 0;
+}
+.question-queue-list {
+  max-height: 430px;
+  overflow-y: auto;
+  display: grid;
+  gap: 7px;
+  margin-bottom: 28px;
+}
+.question-queue-list button {
+  width: 100%;
+  border: 0;
+  border-radius: 10px;
+  padding: 13px;
+  text-align: left;
+  color: var(--ink);
+  background: var(--control);
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: 4px 10px;
+  cursor: pointer;
+}
+.question-queue-list button.selected {
+  background: var(--accent-soft);
+  box-shadow: inset 3px 0 var(--accent);
+}
+.question-queue-list button small {
+  grid-column: 1 / -1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--ink-muted);
+}
+.question-options-editor {
+  padding: 0;
+  border: 0;
+  display: grid;
+  gap: 9px;
+}
+.question-options-editor legend {
+  margin-bottom: 9px;
+  color: var(--ink-soft);
+  font-size: 12px;
+  font-weight: 700;
+}
+.question-options-editor label {
+  grid-template-columns: 22px 1fr;
+  align-items: center;
+}
+.question-options-editor input[type="radio"] {
+  width: 18px;
+  height: 18px;
+}
+
+.admin-catalog {
+  display: grid;
+  gap: 22px;
+  margin-bottom: 38px;
+}
+.admin-metrics {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  border-radius: 14px;
+  overflow: hidden;
+  background: var(--ink);
+  color: var(--paper);
+}
+.admin-metrics > div {
+  padding: 21px;
+  display: grid;
+  gap: 5px;
+}
+.admin-metrics > div + div {
+  border-left: 1px solid rgb(255 255 255 / 14%);
+}
+.admin-metrics strong {
+  font-size: 29px;
+}
+.admin-metrics span,
+.admin-metrics small {
+  color: rgb(255 255 255 / 72%);
+}
+.admin-catalog-grid {
+  display: grid;
+  grid-template-columns: 0.85fr 1.15fr;
+  gap: 18px;
+}
+.admin-subject-tree {
+  display: grid;
+  gap: 12px;
+}
+.admin-subject-tree article {
+  padding: 14px;
+  border-radius: 10px;
+  background: var(--control);
+  display: grid;
+  gap: 5px;
+}
+.admin-subject-tree article > span,
+.admin-subject-tree small {
+  color: var(--ink-muted);
+}
+.admin-subject-tree article > div {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  padding-top: 8px;
+}
+.admin-content-forms details {
+  padding: 12px 0;
+}
+.admin-content-forms details + details {
+  border-top: 1px solid var(--line);
+}
+.admin-content-forms summary {
+  cursor: pointer;
+  font-weight: 800;
+}
+.admin-content-forms form {
+  margin-top: 18px;
+}
+
+@media (max-width: 900px) {
+  .diagnostic-shell,
+  .question-studio-grid,
+  .admin-catalog-grid {
+    grid-template-columns: 1fr;
+  }
+  .diagnostic-shell > header {
+    position: static;
+  }
+}
+
+@media (max-width: 680px) {
+  .diagnostic-shell {
+    width: min(100% - 28px, 920px);
+    padding-top: 34px;
+    gap: 28px;
+  }
+  .diagnostic-question,
+  .lesson-reader-panel {
+    padding: 22px;
+  }
+  .lesson-reader {
+    padding: 12px;
+  }
+  .recommendation-list article {
+    grid-template-columns: 1fr;
+  }
+  .admin-metrics {
+    grid-template-columns: 1fr;
+  }
+  .admin-metrics > div + div {
+    border-left: 0;
+    border-top: 1px solid rgb(255 255 255 / 14%);
+  }
+}

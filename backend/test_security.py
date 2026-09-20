@@ -177,6 +177,40 @@ class SecurityBoundaryTests(unittest.TestCase):
 
         self.assertEqual(error.exception.status_code, 403)
 
+    def test_new_learning_and_admin_routes_keep_role_boundaries(self):
+        """A URL existir não basta: cada grupo continua preso ao cargo certo."""
+
+        paths = {route.path for route in app.routes}
+        expected = {
+            "/student/diagnostic",
+            "/student/recommendations",
+            "/student/lessons/{lesson_id}",
+            "/teacher/questions",
+            "/teacher/questions/{question_id}",
+            "/admin/overview",
+            "/admin/subjects",
+            "/admin/contents",
+        }
+        self.assertTrue(expected.issubset(paths))
+        with self.assertRaises(HTTPException):
+            require_role("admin")({"role": "student"})
+        with self.assertRaises(HTTPException):
+            require_role("teacher")({"role": "student"})
+
+    def test_learning_migration_keeps_diagnostics_behind_backend(self):
+        """Avaliação e progresso não podem ser forjados com a chave pública."""
+
+        migration = (
+            Path(__file__).resolve().parents[1]
+            / "supabase"
+            / "migrations"
+            / "20260918120000_learning_journey.sql"
+        ).read_text(encoding="utf-8")
+
+        self.assertIn("revoke all on public.diagnostic_sessions", migration)
+        self.assertIn("revoke select on public.subjects, public.modules, public.lessons", migration)
+        self.assertIn("questions_status_check", migration)
+
 
 if __name__ == "__main__":
     unittest.main()

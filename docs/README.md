@@ -1,6 +1,6 @@
 # Documentação do AprendeIA
 
-Este diretório reúne a visão geral do projeto e a explicação de cada área do sistema. Os textos refletem o código e as migrations existentes em 15 de setembro de 2026.
+Este diretório reúne a visão geral do projeto e a explicação de cada área do sistema. Os textos refletem o código e as migrations existentes em 20 de setembro de 2026.
 
 ## Comece por aqui
 
@@ -15,6 +15,8 @@ Este diretório reúne a visão geral do projeto e a explicação de cada área 
 - [Segurança](SEGURANCA.md) — fronteiras de acesso, segredos e riscos conhecidos.
 - [Execução e deploy](EXECUCAO_E_DEPLOY.md) — ambiente local, Railway e configurações externas.
 - [Testes](TESTES.md) — comandos, cobertura atual e verificações ainda necessárias.
+- [Jornada adaptativa](JORNADA_ADAPTATIVA.md) — diagnóstico, domínio por tópico, aulas e recomendações.
+- [CI/CD e monitoramento](OBSERVABILIDADE_E_CICD.md) — testes automáticos, healthchecks, logs e Railway.
 
 ## Documentos específicos já existentes
 

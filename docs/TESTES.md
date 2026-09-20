@@ -8,7 +8,7 @@ Na raiz do repositório:
 .\backend\.venv\Scripts\python.exe -m unittest discover -s backend -v
 ```
 
-A suíte atual possui 39 testes e cobre:
+A suíte atual possui 47 testes e cobre:
 
 - fronteiras de aluno, professor e administração;
 - ausência de configuração do Supabase;
@@ -25,15 +25,21 @@ A suíte atual possui 39 testes e cobre:
 - cabeçalhos de segurança em respostas da API;
 - limite por usuário com `Retry-After`;
 - revogação de acesso direto ao gabarito, tentativas e progresso.
+- validação do Turnstile quando configurado;
+- classificação de domínio por tópico e recomendações de aula;
+- rotas protegidas da jornada e da administração;
+- bloqueio direto das tabelas de diagnóstico pela chave pública.
 
 ## Frontend
 
 ```powershell
 cd D:\AprendeIA\frontend
 npm run build
+npm run test:run
+npm run test:e2e
 ```
 
-O comando executa a checagem TypeScript e o build de produção do Vite.
+O build executa a checagem TypeScript e gera o pacote de produção do Vite. O Vitest cobre componentes e o Playwright percorre login, recuperação e cadastro em desktop e mobile.
 
 A personalização também possui testes de backend para impedir valores visuais arbitrários, restringir a rota ao estudante e recusar insígnias ainda não conquistadas.
 
@@ -48,7 +54,7 @@ cd D:\AprendeIA
 .\backend\.venv\Scripts\python.exe -m bandit backend\main.py backend\auth_security.py backend\difficulty_alerts.py backend\gamification.py backend\teacher_dashboard.py
 ```
 
-Na revisão de 15/09/2026, `npm audit` e `pip-audit` não encontraram vulnerabilidades conhecidas. O Bandit não encontrou achados médios ou altos no código de produção.
+Na revisão de 20/09/2026, a instalação dos novos pacotes frontend informou zero vulnerabilidades conhecidas. As verificações finais devem repetir `npm audit`, `pip-audit` e Bandit antes do deploy.
 
 ## Banco
 
@@ -62,7 +68,7 @@ As migrations foram verificadas com transações que:
 
 ## Ainda recomendado
 
-- Testes E2E no navegador com Supabase real.
+- Testes E2E da jornada completa com um projeto Supabase de homologação.
 - Testes simultâneos para várias requisições de login.
 - Teste de entrega SMTP em uma caixa de e-mail própria.
 - Teste de deploy no Railway após configurar o novo segredo.

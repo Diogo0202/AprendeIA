@@ -9,6 +9,7 @@ interface Window {
     API_URL?: string;
     CLARITY_PROJECT_ID?: string;
     ENABLE_CLARITY?: string;
+    TURNSTILE_SITE_KEY?: string;
   };
 
   /** Fila criada pelo snippet oficial enquanto o script do Clarity carrega. */

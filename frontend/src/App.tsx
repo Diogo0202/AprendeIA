@@ -1,9 +1,16 @@
 import { CSSProperties, FormEvent, useEffect, useState } from "react";
+import { AdminCatalog, type AdminSubject } from "./components/admin/AdminCatalog";
 import FallbackAvatar, { type AvatarKey } from "./components/FallbackAvatar";
-import { accessToken, apiUrl, isSupabaseConfigured, supabase } from "./lib/supabase";
+import { DiagnosticAssessment } from "./components/student/DiagnosticAssessment";
+import { LessonReader } from "./components/student/LessonReader";
+import { QuestionStudio } from "./components/teacher/QuestionStudio";
+import { TurnstileWidget } from "./components/TurnstileWidget";
+import { apiError, apiFetch } from "./lib/api";
+import { apiUrl, isSupabaseConfigured, supabase } from "./lib/supabase";
+import type { DiagnosticState, LearningRecommendations, StudentSubject } from "./types/learning";
 
 // As visualizações funcionam como uma navegação leve para este protótipo.
-type View = "login" | "signup" | "student" | "teacher" | "teacher-pending" | "admin" | "practice";
+type View = "login" | "signup" | "forgot-password" | "reset-password" | "student" | "teacher" | "teacher-pending" | "admin" | "practice";
 type Role = "student" | "teacher" | "admin";
 type SignupRole = Extract<Role, "student" | "teacher">;
 type AccentTheme = "wine" | "ocean" | "forest" | "amber";
@@ -58,102 +65,34 @@ const initialProfile: UserProfile = {
   accentTheme: "wine",
   profileSetupComplete: false,
 };
-/** Anexa o JWT atual às chamadas que precisam ser validadas pelo FastAPI. */
-async function apiFetch(path: string, init: RequestInit = {}) {
-  const token = await accessToken();
-  const headers = new Headers(init.headers);
-  if (init.body) headers.set("Content-Type", "application/json");
-  if (token) headers.set("Authorization", `Bearer ${token}`);
-  return fetch(`${apiUrl}${path}`, { ...init, headers });
-}
-type Subject = {
-  name: string;
-  category: string;
-  code: string;
-  module: string;
-  completed: number;
-  total: number;
-  difficulty: string;
-  tone: string;
-  coverTone: string;
-};
-
-// O catálogo local deixa a demonstração completa enquanto os dados reais vêm da API.
-const subjects: Subject[] = [
+// Esta reserva aparece apenas no modo de apresentação sem banco configurado.
+const demoSubjects: StudentSubject[] = [
   {
+    id: "demo-math",
     name: "Matemática",
+    description: "Raciocínio lógico, números e resolução de problemas.",
     category: "Ciências Exatas",
-    code: "M",
-    module: "Frações e porcentagens",
-    completed: 5,
-    total: 8,
+    code: "MA",
+    completed_lessons: 1,
+    total_lessons: 2,
+    remaining_lessons: 1,
     difficulty: "Alta",
     tone: "high",
-    coverTone: "math",
+    topics: [{ topic: "Frações", accuracy: 40, attempts: 5 }],
+    modules: [
+      {
+        id: "demo-module",
+        title: "Frações e porcentagens",
+        position: 1,
+        completed_lessons: 1,
+        total_lessons: 2,
+        lessons: [
+          { id: "demo-lesson-1", title: "Conceito de fração", position: 1, estimated_minutes: 15, summary: "Entenda numerador e denominador.", learning_objectives: [], completed: true, time_seconds: 900 },
+          { id: "demo-lesson-2", title: "Frações equivalentes", position: 2, estimated_minutes: 15, summary: "Compare frações com o mesmo valor.", learning_objectives: [], completed: false, time_seconds: 0 },
+        ],
+      },
+    ],
   },
-  {
-    name: "Português",
-    category: "Linguagens",
-    code: "PT",
-    module: "Interpretação de texto",
-    completed: 4,
-    total: 6,
-    difficulty: "Média",
-    tone: "medium",
-    coverTone: "language",
-  },
-  {
-    name: "Ciências",
-    category: "Ciências da Natureza",
-    code: "C",
-    module: "Sistema solar",
-    completed: 6,
-    total: 6,
-    difficulty: "Baixa",
-    tone: "low",
-    coverTone: "science",
-  },
-  {
-    name: "História",
-    category: "Ciências Humanas",
-    code: "H",
-    module: "Brasil República",
-    completed: 3,
-    total: 7,
-    difficulty: "Média",
-    tone: "medium",
-    coverTone: "history",
-  },
-  {
-    name: "Geografia",
-    category: "Ciências Humanas",
-    code: "G",
-    module: "Clima e vegetação",
-    completed: 2,
-    total: 6,
-    difficulty: "Alta",
-    tone: "high",
-    coverTone: "geography",
-  },
-  {
-    name: "Inglês",
-    category: "Linguagens",
-    code: "EN",
-    module: "Leitura e vocabulário",
-    completed: 4,
-    total: 8,
-    difficulty: "Baixa",
-    tone: "low",
-    coverTone: "english",
-  },
-];
-
-const subjectCategories = [
-  "Todas",
-  "Ciências Exatas",
-  "Linguagens",
-  "Ciências da Natureza",
-  "Ciências Humanas",
 ];
 
 type Achievement = {
@@ -408,6 +347,11 @@ export default function App() {
       else setAuthLoading(false);
     });
     const { data } = supabase.auth.onAuthStateChange((event, session) => {
+      if (event === "PASSWORD_RECOVERY") {
+        setView("reset-password");
+        setAuthLoading(false);
+        return;
+      }
       if (event === "SIGNED_OUT") {
         setView("login");
         setAuthLoading(false);
@@ -480,6 +424,7 @@ export default function App() {
         body: JSON.stringify({
           email: String(data.get("email")),
           password: String(data.get("password")),
+          captcha_token: String(data.get("captcha_token") || "") || undefined,
         }),
       });
       const payload = (await loginResponse.json().catch(() => ({}))) as LoginSessionPayload;
@@ -546,6 +491,7 @@ export default function App() {
       email: nextProfile.email,
       password: String(data.get("password")),
       options: {
+        captchaToken: String(data.get("captcha_token") || "") || undefined,
         data: {
           full_name: nextProfile.name,
           grade: nextProfile.grade,
@@ -573,6 +519,46 @@ export default function App() {
       setView("login");
       setAuthLoading(false);
     }
+  }
+
+  /** Envia o link pelo Supabase sem revelar se o e-mail está cadastrado. */
+  async function handlePasswordRecovery(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    if (!supabase) {
+      setAuthMessage("A recuperação precisa do Supabase configurado.");
+      return;
+    }
+    const data = new FormData(event.currentTarget);
+    setAuthLoading(true);
+    const { error } = await supabase.auth.resetPasswordForEmail(String(data.get("email")), {
+      redirectTo: window.location.origin,
+      captchaToken: String(data.get("captcha_token") || "") || undefined,
+    });
+    setAuthMessage(error ? "Não foi possível enviar o link agora." : "Se o e-mail estiver cadastrado, você receberá um link de recuperação.");
+    setAuthLoading(false);
+  }
+
+  /** Troca a senha somente dentro da sessão curta aberta pelo link recebido. */
+  async function handlePasswordUpdate(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    if (!supabase) return;
+    const data = new FormData(event.currentTarget);
+    const password = String(data.get("password"));
+    const confirmation = String(data.get("confirmation"));
+    if (password !== confirmation) {
+      setAuthMessage("As senhas precisam ser iguais.");
+      return;
+    }
+    setAuthLoading(true);
+    const { error } = await supabase.auth.updateUser({ password });
+    if (error) {
+      setAuthMessage("Não foi possível atualizar a senha. Abra o link novamente.");
+    } else {
+      await supabase.auth.signOut();
+      setAuthMessage("Senha atualizada. Entre novamente.");
+      setView("login");
+    }
+    setAuthLoading(false);
   }
 
   // Encerra também a sessão remota para invalidar o estado persistido no navegador.
@@ -640,13 +626,27 @@ export default function App() {
           <Login
             onSubmit={handleLogin}
             onSignup={() => setView("signup")}
+            onForgot={() => setView("forgot-password")}
+            message={authMessage}
+            loading={authLoading}
+          />
+        ) : view === "signup" ? (
+          <Signup
+            onSubmit={handleSignup}
+            onLogin={() => setView("login")}
+            message={authMessage}
+            loading={authLoading}
+          />
+        ) : view === "forgot-password" ? (
+          <ForgotPassword
+            onSubmit={handlePasswordRecovery}
+            onLogin={() => setView("login")}
             message={authMessage}
             loading={authLoading}
           />
         ) : (
-          <Signup
-            onSubmit={handleSignup}
-            onLogin={() => setView("login")}
+          <ResetPassword
+            onSubmit={handlePasswordUpdate}
             message={authMessage}
             loading={authLoading}
           />
@@ -745,11 +745,13 @@ function Avatar({
 function Login({
   onSubmit,
   onSignup,
+  onForgot,
   message,
   loading,
 }: {
   onSubmit: (e: FormEvent<HTMLFormElement>) => void;
   onSignup: () => void;
+  onForgot: () => void;
   message: string;
   loading: boolean;
 }) {
@@ -788,10 +790,11 @@ function Login({
             <input type="checkbox" />
             <span>Lembrar de mim</span>
           </label>
-          <a href="#forgot" onClick={(e) => e.preventDefault()}>
+          <button type="button" className="text-button" onClick={onForgot}>
             Esqueci minha senha
-          </a>
+          </button>
         </div>
+        <TurnstileWidget action="login" />
         {message && (
           <p className="form-message" role="status">
             {message}
@@ -882,14 +885,7 @@ function Signup({
         ) : (
           <label>
             DISCIPLINA
-            <select name="subject" defaultValue="" required>
-              <option value="" disabled>
-                Selecione sua disciplina...
-              </option>
-              {subjects.map((subject) => (
-                <option key={subject.name} value={subject.name}>{subject.name}</option>
-              ))}
-            </select>
+            <input name="subject" placeholder="Ex.: Matemática" maxLength={60} required />
           </label>
         )}
         <label>
@@ -918,6 +914,7 @@ function Signup({
             Seu painel é liberado depois que a administradora confirma o cadastro e a disciplina. Sua senha fica protegida pelo Supabase e não é salva no banco do AprendeIA.
           </p>
         )}
+        <TurnstileWidget action="signup" />
         {message && (
           <p className="form-message" role="status">
             {message}
@@ -941,6 +938,55 @@ function Signup({
   );
 }
 
+function ForgotPassword({
+  onSubmit,
+  onLogin,
+  message,
+  loading,
+}: {
+  onSubmit: (event: FormEvent<HTMLFormElement>) => void;
+  onLogin: () => void;
+  message: string;
+  loading: boolean;
+}) {
+  return (
+    <>
+      <h1>Recuperar senha</h1>
+      <p className="subtitle">Enviaremos um link seguro para o e-mail da sua conta.</p>
+      <form className="auth-form" onSubmit={onSubmit}>
+        <label>E-MAIL<input name="email" type="email" autoComplete="email" required /></label>
+        <TurnstileWidget action="recovery" />
+        {message && <p className="form-message" role="status">{message}</p>}
+        <button className="primary-button" disabled={loading}>{loading ? "Enviando..." : "Enviar link"}</button>
+      </form>
+      <p className="switch-copy"><button className="text-button" onClick={onLogin}>Voltar para o login</button></p>
+    </>
+  );
+}
+
+function ResetPassword({
+  onSubmit,
+  message,
+  loading,
+}: {
+  onSubmit: (event: FormEvent<HTMLFormElement>) => void;
+  message: string;
+  loading: boolean;
+}) {
+  return (
+    <>
+      <h1>Criar nova senha</h1>
+      <p className="subtitle">Use pelo menos oito caracteres e não repita uma senha antiga.</p>
+      <form className="auth-form" onSubmit={onSubmit}>
+        <label>NOVA SENHA<input name="password" type="password" minLength={8} autoComplete="new-password" required /></label>
+        <label>CONFIRMAR SENHA<input name="confirmation" type="password" minLength={8} autoComplete="new-password" required /></label>
+        {message && <p className="form-message" role="status">{message}</p>}
+        <button className="primary-button" disabled={loading}>{loading ? "Salvando..." : "Atualizar senha"}</button>
+      </form>
+    </>
+  );
+}
+
 /** Resume aulas, progresso e dificuldades para orientar o próximo estudo. */
 function StudentProfile({
   profile,
@@ -957,6 +1003,17 @@ function StudentProfile({
     isSupabaseConfigured ? null : demoGamification,
   );
   const [gamificationError, setGamificationError] = useState("");
+  const [studentSubjects, setStudentSubjects] = useState<StudentSubject[]>(
+    isSupabaseConfigured ? [] : demoSubjects,
+  );
+  const [recommendations, setRecommendations] = useState<LearningRecommendations>({ mastery: [], recommendations: [] });
+  const [diagnostic, setDiagnostic] = useState<DiagnosticState | null>(
+    isSupabaseConfigured ? null : { status: "completed", session_id: "demo" },
+  );
+  const [learningLoading, setLearningLoading] = useState(isSupabaseConfigured);
+  const [learningError, setLearningError] = useState("");
+  const [selectedLessonId, setSelectedLessonId] = useState<string | null>(null);
+  const [catalogVersion, setCatalogVersion] = useState(0);
   const [subjectQuery, setSubjectQuery] = useState("");
   const [activeCategory, setActiveCategory] = useState("Todas");
   const [isEditingProfile, setIsEditingProfile] = useState(!profile.profileSetupComplete);
@@ -984,18 +1041,54 @@ function StudentProfile({
     };
   }, []);
 
+  // O catálogo, o diagnóstico e as recomendações usam a mesma sessão, mas cada
+  // resposta mantém seu próprio estado para a tela continuar útil em falha parcial.
+  useEffect(() => {
+    if (!isSupabaseConfigured) return;
+    let active = true;
+    setLearningLoading(true);
+    Promise.all([
+      apiFetch("/student/subjects"),
+      apiFetch("/student/recommendations"),
+      apiFetch("/student/diagnostic"),
+    ])
+      .then(async ([subjectsResponse, recommendationsResponse, diagnosticResponse]) => {
+        if (!subjectsResponse.ok) throw new Error(await apiError(subjectsResponse, "Não foi possível carregar as matérias."));
+        if (!recommendationsResponse.ok) throw new Error(await apiError(recommendationsResponse, "Não foi possível carregar as recomendações."));
+        if (!diagnosticResponse.ok) throw new Error(await apiError(diagnosticResponse, "Não foi possível abrir a avaliação diagnóstica."));
+        return Promise.all([
+          subjectsResponse.json() as Promise<StudentSubject[]>,
+          recommendationsResponse.json() as Promise<LearningRecommendations>,
+          diagnosticResponse.json() as Promise<DiagnosticState>,
+        ]);
+      })
+      .then(([nextSubjects, nextRecommendations, nextDiagnostic]) => {
+        if (!active) return;
+        setStudentSubjects(nextSubjects);
+        setRecommendations(nextRecommendations);
+        setDiagnostic(nextDiagnostic);
+        setLearningError("");
+      })
+      .catch((error) => {
+        if (active) setLearningError(error instanceof Error ? error.message : "Não foi possível carregar sua jornada.");
+      })
+      .finally(() => active && setLearningLoading(false));
+    return () => { active = false; };
+  }, [catalogVersion]);
+
   const levelStyle = gamification
     ? ({ "--progress": gamification.level_progress } as CSSProperties &
         Record<"--progress", number>)
     : undefined;
 
   const normalizedQuery = subjectQuery.trim().toLocaleLowerCase("pt-BR");
-  const visibleSubjects = subjects.filter((subject) => {
+  const subjectCategories = ["Todas", ...Array.from(new Set(studentSubjects.map((subject) => subject.category)))];
+  const visibleSubjects = studentSubjects.filter((subject) => {
     const matchesCategory =
       activeCategory === "Todas" || subject.category === activeCategory;
     const matchesSearch =
       !normalizedQuery ||
-      `${subject.name} ${subject.module} ${subject.category}`
+      `${subject.name} ${subject.modules.map((module) => module.title).join(" ")} ${subject.category}`
         .toLocaleLowerCase("pt-BR")
         .includes(normalizedQuery);
     return matchesCategory && matchesSearch;
@@ -1016,6 +1109,21 @@ function StudentProfile({
           onSave={(nextProfile) => {
             onProfileChange(nextProfile);
             setIsEditingProfile(false);
+          }}
+        />
+      </main>
+    );
+  }
+
+  if (diagnostic?.status === "open") {
+    return (
+      <main className="profile-page">
+        <Header area="AVALIAÇÃO DIAGNÓSTICA" onLogout={onLogout} />
+        <DiagnosticAssessment
+          diagnostic={diagnostic}
+          onComplete={(result) => {
+            setRecommendations(result);
+            setDiagnostic({ ...diagnostic, status: "completed", mastery: result.mastery, recommendations: result.recommendations });
           }}
         />
       </main>
@@ -1100,6 +1208,8 @@ function StudentProfile({
           </section>
         </section>
         {gamificationError && <p className="gamification-message" role="status">{gamificationError}</p>}
+        {learningError && <p className="gamification-message" role="alert">{learningError}</p>}
+        {learningLoading && <p className="catalog-loading" role="status">Carregando matérias e recomendações...</p>}
         <button className="primary-button practice-button" onClick={() => onPractice()}>
           Praticar questões com IA
         </button>
@@ -1134,9 +1244,12 @@ function StudentProfile({
           </div>
           {visibleSubjects.length ? (
             <div className="subject-grid">
-            {visibleSubjects.map((subject) => (
-              <article className="subject-card" key={subject.name}>
-                <div className={`subject-cover ${subject.coverTone}`}>
+            {visibleSubjects.map((subject) => {
+              const currentModule = subject.modules.find((module) => module.lessons.some((lesson) => !lesson.completed)) ?? subject.modules[0];
+              const nextLesson = currentModule?.lessons.find((lesson) => !lesson.completed) ?? currentModule?.lessons[0];
+              return (
+              <article className="subject-card" key={subject.id}>
+                <div className={`subject-cover catalog-cover ${subject.tone}`}>
                   <span>{subject.category}</span>
                   <strong aria-hidden="true">{subject.code}</strong>
                 </div>
@@ -1144,27 +1257,28 @@ function StudentProfile({
                   <div className="subject-card-heading">
                     <span className={`difficulty ${subject.tone}`}>{subject.difficulty}</span>
                   <h3>{subject.name}</h3>
-                  <p>{subject.module}</p>
+                  <p>{currentModule?.title || "Conteúdo em preparação"}</p>
                   </div>
                   <div className="course-meta" aria-label={`Progresso em ${subject.name}`}>
-                    <span><strong>{subject.total}</strong> aulas</span>
-                    <span><strong>{subject.completed}</strong> concluídas</span>
+                    <span><strong>{subject.total_lessons}</strong> aulas</span>
+                    <span><strong>{subject.completed_lessons}</strong> concluídas</span>
                   </div>
                   <progress
                     className="course-progress"
-                    value={subject.completed}
-                    max={subject.total}
-                    aria-label={`${subject.completed} de ${subject.total} aulas concluídas`}
+                    value={subject.completed_lessons}
+                    max={Math.max(1, subject.total_lessons)}
+                    aria-label={`${subject.completed_lessons} de ${subject.total_lessons} aulas concluídas`}
                   />
                   <div className="subject-card-footer">
-                    <span>Faltam {subject.total - subject.completed} aulas</span>
-                    <button type="button" onClick={() => onPractice(subject.name)}>
-                      Continuar
+                    <span>Faltam {subject.remaining_lessons} aulas</span>
+                    <button type="button" onClick={() => nextLesson ? setSelectedLessonId(nextLesson.id) : onPractice(subject.name)}>
+                      {nextLesson ? "Abrir aula" : "Praticar"}
                     </button>
                   </div>
                 </div>
               </article>
-            ))}
+              );
+            })}
             </div>
           ) : (
             <div className="catalog-empty" role="status">
@@ -1173,24 +1287,52 @@ function StudentProfile({
             </div>
           )}
         </section>
+        <section className="section recommendation-section" aria-labelledby="recommendations-title">
+          <div className="section-heading">
+            <h2 id="recommendations-title">Recomendado para você</h2>
+            <span>Escolhido a partir dos tópicos que pedem mais atenção</span>
+          </div>
+          {recommendations.recommendations.length ? (
+            <div className="recommendation-list">
+              {recommendations.recommendations.map((recommendation) => (
+                <article key={`${recommendation.subject_id}-${recommendation.topic}`}>
+                  <div><strong>{recommendation.topic}</strong><span>{recommendation.subject} - {recommendation.accuracy}% de acertos</span><p>{recommendation.reason}</p></div>
+                  {recommendation.lessons[0] ? <button type="button" className="outline-button" onClick={() => setSelectedLessonId(recommendation.lessons[0].id)}>Estudar {recommendation.lessons[0].title}</button> : <button type="button" className="outline-button" onClick={() => onPractice(recommendation.subject)}>Praticar agora</button>}
+                </article>
+              ))}
+            </div>
+          ) : (
+            <div className="catalog-empty"><strong>Continue praticando.</strong><span>Com mais respostas, as recomendações ficam mais precisas.</span></div>
+          )}
+        </section>
         <section className="section">
           <div className="section-heading">
             <h2>Minhas dificuldades</h2>
             <span>Identificadas pelas suas atividades</span>
           </div>
           <div className="difficulty-list">
-            {subjects.map((subject) => (
-              <article className="difficulty-row" key={subject.name}>
+            {recommendations.mastery.length ? recommendations.mastery.map((topic) => (
+              <article className="difficulty-row" key={`${topic.subject_id}-${topic.topic}`}>
                 <div>
-                  <strong>{subject.name}</strong>
-                  <span>{subject.module}</span>
+                  <strong>{topic.subject}</strong>
+                  <span>{topic.topic} - {topic.attempts} tentativa(s)</span>
                 </div>
-                <Difficulty level={subject.difficulty} tone={subject.tone} />
+                <Difficulty
+                  level={topic.status === "mastered" ? "Dominado" : topic.status === "fragile" ? "Frágil" : "Em desenvolvimento"}
+                  tone={topic.status === "mastered" ? "low" : topic.status === "fragile" ? "high" : "medium"}
+                />
               </article>
-            ))}
+            )) : <p className="teacher-empty">Ainda não há tentativas suficientes para mapear seus tópicos.</p>}
           </div>
         </section>
       </section>
+      {selectedLessonId && (
+        <LessonReader
+          lessonId={selectedLessonId}
+          onClose={() => setSelectedLessonId(null)}
+          onUpdated={() => setCatalogVersion((version) => version + 1)}
+        />
+      )}
     </main>
   );
 }
@@ -1463,6 +1605,20 @@ function PracticeProfile({
     next_difficulty: string;
   } | null>(null);
   const [loading, setLoading] = useState(false);
+  const [practiceSubjects, setPracticeSubjects] = useState<string[]>(
+    isSupabaseConfigured ? [initialSubject] : demoSubjects.map((item) => item.name),
+  );
+
+  useEffect(() => {
+    if (!isSupabaseConfigured) return;
+    let active = true;
+    apiFetch("/student/subjects")
+      .then((response) => response.ok ? response.json() as Promise<StudentSubject[]> : [])
+      .then((items) => {
+        if (active && Array.isArray(items)) setPracticeSubjects(items.map((item) => item.name));
+      });
+    return () => { active = false; };
+  }, []);
   // Limpa o estado anterior para que nenhuma resposta apareça na nova questão.
   async function loadQuestion() {
     setLoading(true);
@@ -1517,12 +1673,7 @@ function PracticeProfile({
             value={subject}
             onChange={(event) => setSubject(event.target.value)}
           >
-            <option>Matemática</option>
-            <option>Português</option>
-            <option>Ciências</option>
-            <option>História</option>
-            <option>Geografia</option>
-            <option>Inglês</option>
+            {practiceSubjects.map((name) => <option key={name}>{name}</option>)}
           </select>
           <button className="outline-button" onClick={loadQuestion}>
             {loading ? "Gerando..." : "Nova questão"}
@@ -1586,7 +1737,7 @@ function PracticeProfile({
 
 /** Reúne as tarefas diárias do professor sem misturar funções administrativas. */
 function TeacherProfile({ onLogout }: { onLogout: () => void }) {
-  type TeacherTab = "overview" | "classes" | "reports" | "contents" | "ai";
+  type TeacherTab = "overview" | "classes" | "reports" | "contents" | "questions" | "ai";
   const [activeTab, setActiveTab] = useState<TeacherTab>("overview");
   const [overview, setOverview] = useState<TeacherOverview>(
     supabase
@@ -1677,6 +1828,7 @@ function TeacherProfile({ onLogout }: { onLogout: () => void }) {
     { id: "classes", label: "Turmas" },
     { id: "reports", label: "Relatórios" },
     { id: "contents", label: "Conteúdos" },
+    { id: "questions", label: "Questões" },
     { id: "ai", label: "Recomendação IA" },
   ];
 
@@ -2082,6 +2234,8 @@ function TeacherProfile({ onLogout }: { onLogout: () => void }) {
             </div>
           )}
 
+          {activeTab === "questions" && <QuestionStudio subject={overview.subject} />}
+
           {activeTab === "ai" && (
             <section className="ai-studio">
               <div className="ai-brief">
@@ -2131,7 +2285,7 @@ function DifficultyTrend({ points }: { points: TrendPoint[] }) {
 
 /** Permite que apenas a administradora crie contas e atribua cargos iniciais. */
 function AdminProfile({ onLogout }: { onLogout: () => void }) {
-  const [people, setPeople] = useState(
+  const [people, setPeople] = useState<{ name: string; role: string }[]>(
     supabase
       ? []
       : [
@@ -2139,6 +2293,7 @@ function AdminProfile({ onLogout }: { onLogout: () => void }) {
           { name: "Prof. Carlos Lima", role: "Professor" },
         ],
   );
+  const [adminSubjects, setAdminSubjects] = useState<AdminSubject[]>([]);
   const [teacherRequests, setTeacherRequests] = useState<TeacherRegistrationRequest[]>([]);
   const [message, setMessage] = useState("");
   const [selectedRole, setSelectedRole] = useState<"student" | "teacher">("student");
@@ -2146,17 +2301,25 @@ function AdminProfile({ onLogout }: { onLogout: () => void }) {
 
   useEffect(() => {
     let active = true;
-    async function loadTeacherRequests() {
+    async function loadAdminData() {
       if (!supabase) return;
-      const response = await apiFetch("/admin/teacher-requests");
+      const [requestsResponse, usersResponse] = await Promise.all([
+        apiFetch("/admin/teacher-requests"),
+        apiFetch("/admin/users"),
+      ]);
       if (!active) return;
-      if (!response.ok) {
-        setMessage("Não foi possível carregar as solicitações de professor.");
+      if (!requestsResponse.ok || !usersResponse.ok) {
+        setMessage("Não foi possível carregar os dados administrativos.");
         return;
       }
-      setTeacherRequests((await response.json()) as TeacherRegistrationRequest[]);
+      setTeacherRequests((await requestsResponse.json()) as TeacherRegistrationRequest[]);
+      const users = (await usersResponse.json()) as { full_name: string; role: Role }[];
+      setPeople(users.map((person) => ({
+        name: person.full_name,
+        role: person.role === "teacher" ? "Professor" : person.role === "admin" ? "Administradora" : "Estudante",
+      })));
     }
-    void loadTeacherRequests();
+    void loadAdminData();
     return () => {
       active = false;
     };
@@ -2229,8 +2392,9 @@ function AdminProfile({ onLogout }: { onLogout: () => void }) {
         <p className="eyebrow">GERENCIAMENTO DE USUÁRIOS</p>
         <h1>Adicionar pessoas</h1>
         <p className="subtitle">
-          Inclua estudantes e professores em seus respectivos cargos.
+          Acompanhe o sistema, organize disciplinas, aulas e pessoas.
         </p>
+        <AdminCatalog onSubjectsChange={setAdminSubjects} />
         <section className="teacher-request-queue" aria-labelledby="teacher-requests-title">
           <div className="request-queue-heading">
             <div>
@@ -2252,7 +2416,7 @@ function AdminProfile({ onLogout }: { onLogout: () => void }) {
                     <label>
                       <span className="sr-only">Disciplina de {request.full_name}</span>
                       <select name="subject" defaultValue={request.requested_subject} required>
-                        {subjects.map((subject) => (
+                        {adminSubjects.map((subject) => (
                           <option key={subject.name} value={subject.name}>{subject.name}</option>
                         ))}
                       </select>
@@ -2303,7 +2467,7 @@ function AdminProfile({ onLogout }: { onLogout: () => void }) {
                   DISCIPLINA
                   <select name="subject" defaultValue="" required aria-describedby="subject-help">
                     <option value="" disabled>Selecione...</option>
-                    {subjects.map((subject) => (
+                    {adminSubjects.map((subject) => (
                       <option key={subject.name} value={subject.name}>{subject.name}</option>
                     ))}
                   </select>
