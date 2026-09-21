@@ -13,6 +13,7 @@ Este diretório reúne a visão geral do projeto e a explicação de cada área 
 - [IA e banco de questões](IA_E_BANCO_DE_QUESTOES.md) — geração, correção e recomendações pedagógicas.
 - [Banco de dados](BANCO_DE_DADOS.md) — tabelas, relações, funções e migrations.
 - [Segurança](SEGURANCA.md) — fronteiras de acesso, segredos e riscos conhecidos.
+- [Auditoria de acessos](AUDITORIA_DE_ACESSOS.md) — eventos registrados, privacidade, retenção e consulta.
 - [Execução e deploy](EXECUCAO_E_DEPLOY.md) — ambiente local, Railway e configurações externas.
 - [Testes](TESTES.md) — comandos, cobertura atual e verificações ainda necessárias.
 - [Jornada adaptativa](JORNADA_ADAPTATIVA.md) — diagnóstico, domínio por tópico, aulas e recomendações.

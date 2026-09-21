@@ -31,6 +31,9 @@ Essas regras aparecem no FastAPI e nas políticas RLS. Conhecer um ID não é su
 - Tentativas e progresso são gravados somente pelo backend, evitando pontos ou conclusões forjadas pelo navegador.
 - Operações caras e gravações importantes usam limite atômico por usuário no PostgreSQL.
 - API e Nginx enviam CSP, `nosniff`, proteção contra iframe, política de permissões e HSTS.
+- Funcionalidades protegidas geram auditoria com usuário, ação, resultado e `request_id`.
+- Auditoria não grava token, senha, payload, query string ou IP puro; a rede usa HMAC.
+- Somente a administração consulta os eventos, e os hashes internos nunca saem da API.
 
 ## Senhas
 
@@ -61,6 +64,7 @@ Geração de questões, recomendações pedagógicas, respostas, personalizaçã
 - Como o navegador precisa da chave publicável, um cliente avançado ainda pode chamar o Supabase Auth diretamente; os limites nativos do Supabase continuam sendo a proteção desse caminho. Um hook de verificação de senha seria o ponto central ideal quando disponível.
 - O projeto precisa de testes E2E com contas reais de aluno, professor e administração antes de receber dados reais.
 - Logs e alertas operacionais ainda precisam de uma ferramenta de monitoramento em produção.
+- A expiração física dos eventos de auditoria precisa ser agendada; cada linha já recebe `expires_at` de 180 dias.
 - A migration `20260915120000_api_security_hardening.sql` precisa ser aplicada no Supabase e o frontend precisa de novo deploy para os cabeçalhos entrarem em produção.
 - A varredura exploratória do Strix não foi executada porque Strix e Docker não estão disponíveis no PATH desta máquina.
 

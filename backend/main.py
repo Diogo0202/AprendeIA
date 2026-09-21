@@ -20,14 +20,16 @@ from typing import Annotated, Any, Literal
 from zoneinfo import ZoneInfo
 
 from dotenv import load_dotenv
-from fastapi import Depends, FastAPI, Header, HTTPException, Request, Response
+from fastapi import Depends, FastAPI, Header, HTTPException, Query, Request, Response
 from fastapi.middleware.cors import CORSMiddleware
 from openai import OpenAI
 from pydantic import BaseModel, Field, field_validator, model_validator
+from starlette.concurrency import run_in_threadpool
 from supabase import Client, create_client
 from supabase.lib.client_options import SyncClientOptions
 from supabase_auth.errors import AuthApiError
 
+from access_audit import audit_action_for, build_access_audit_record
 from auth_security import (
     LOGIN_LOCK_SECONDS,
     LOGIN_MAX_FAILURES,
@@ -84,9 +86,27 @@ logger = logging.getLogger("aprendeia")
 logger.setLevel(os.getenv("LOG_LEVEL", "INFO").upper())
 
 
+def persist_access_audit(record: dict[str, Any]) -> None:
+    """Grava o evento sem transformar falha de observabilidade em indisponibilidade."""
+
+    if not supabase_configured():
+        return
+    try:
+        database().table("access_audit_logs").insert(record).execute()
+    except Exception:
+        # O detalhe do provedor pode carregar dados internos; o request_id basta
+        # para correlacionar o alerta operacional com o evento HTTP.
+        logger.warning(
+            json.dumps(
+                {"event": "access_audit_write_failed", "request_id": record["request_id"]},
+                ensure_ascii=False,
+            )
+        )
+
+
 @app.middleware("http")
 async def add_security_headers(request: Request, call_next):
-    """Aplica proteção, correlação e tempo para os logs do Railway."""
+    """Aplica cabeçalhos e audita cada funcionalidade protegida."""
 
     started_at = time.perf_counter()
     supplied_request_id = request.headers.get("X-Request-ID", "")
@@ -94,32 +114,63 @@ async def add_security_headers(request: Request, call_next):
         request_id = str(uuid.UUID(supplied_request_id))
     except ValueError:
         request_id = str(uuid.uuid4())
-    response = await call_next(request)
-    response.headers.setdefault("Cache-Control", "no-store")
-    response.headers.setdefault("X-Content-Type-Options", "nosniff")
-    response.headers.setdefault("X-Frame-Options", "DENY")
-    response.headers.setdefault("Referrer-Policy", "no-referrer")
-    response.headers.setdefault("Permissions-Policy", "camera=(), microphone=(), geolocation=()")
-    response.headers.setdefault("Content-Security-Policy", "default-src 'none'; frame-ancestors 'none'")
-    response.headers.setdefault("Strict-Transport-Security", "max-age=31536000; includeSubDomains")
-    response.headers.setdefault("X-Request-ID", request_id)
-    duration_ms = round((time.perf_counter() - started_at) * 1000, 2)
-    route = request.scope.get("route")
-    route_path = getattr(route, "path", request.url.path)
-    logger.info(
-        json.dumps(
-            {
-                "event": "http_request",
-                "request_id": request_id,
-                "method": request.method,
-                # O template evita gravar UUIDs de estudantes nos logs.
-                "path": route_path,
-                "status": response.status_code,
-                "duration_ms": duration_ms,
-            },
-            ensure_ascii=False,
+    request.state.request_id = request_id
+    response: Response | None = None
+    status_code = 500
+    try:
+        response = await call_next(request)
+        status_code = response.status_code
+        response.headers.setdefault("Cache-Control", "no-store")
+        response.headers.setdefault("X-Content-Type-Options", "nosniff")
+        response.headers.setdefault("X-Frame-Options", "DENY")
+        response.headers.setdefault("Referrer-Policy", "no-referrer")
+        response.headers.setdefault("Permissions-Policy", "camera=(), microphone=(), geolocation=()")
+        response.headers.setdefault("Content-Security-Policy", "default-src 'none'; frame-ancestors 'none'")
+        response.headers.setdefault("Strict-Transport-Security", "max-age=31536000; includeSubDomains")
+        response.headers.setdefault("X-Request-ID", request_id)
+    finally:
+        duration_ms = round((time.perf_counter() - started_at) * 1000, 2)
+        route = request.scope.get("route")
+        # Sem uma rota reconhecida, não usamos a URL crua porque ela pode conter
+        # UUID ou outro identificador fornecido pelo usuário.
+        route_path = getattr(route, "path", "")
+        logger.info(
+            json.dumps(
+                {
+                    "event": "http_request",
+                    "request_id": request_id,
+                    "method": request.method,
+                    "path": route_path or "unmatched",
+                    "status": status_code,
+                    "duration_ms": duration_ms,
+                },
+                ensure_ascii=False,
+            )
         )
-    )
+        action = audit_action_for(request.method, route_path)
+        if action:
+            network_hash = None
+            try:
+                network_hash = rate_limit_hash("audit_network", client_network(request))
+            except Exception:
+                # A requisição continua; o evento ainda terá usuário, ação e
+                # request_id mesmo quando o pepper não estiver configurado.
+                network_hash = None
+            record = build_access_audit_record(
+                actor_id=getattr(request.state, "audit_actor_id", None),
+                actor_role=getattr(request.state, "audit_actor_role", None),
+                subject_hash=getattr(request.state, "audit_subject_hash", None),
+                action=action,
+                method=request.method,
+                route=route_path,
+                status_code=status_code,
+                request_id=request_id,
+                network_hash=network_hash,
+            )
+            await run_in_threadpool(persist_access_audit, record)
+
+    if response is None:
+        raise RuntimeError("A resposta HTTP não foi criada.")
     return response
 
 # O schema estrito garante que a IA sempre devolva quatro alternativas e os
@@ -311,6 +362,19 @@ class LessonProgressUpdate(BaseModel):
 
     completed: bool = False
     time_seconds: int = Field(default=0, ge=0, le=28_800)
+
+
+class MandatoryExercisesUpdate(BaseModel):
+    """Lista ordenada de questões que precisam ser respondidas na aula."""
+
+    question_ids: list[uuid.UUID] = Field(default_factory=list, max_length=12)
+
+    @field_validator("question_ids")
+    @classmethod
+    def reject_duplicate_questions(cls, values: list[uuid.UUID]) -> list[uuid.UUID]:
+        if len(set(values)) != len(values):
+            raise ValueError("Cada exercício obrigatório deve aparecer apenas uma vez.")
+        return values
 
 
 class DiagnosticAnswerRequest(AnswerRequest):
@@ -600,7 +664,10 @@ def current_week_start(today: date | None = None) -> date:
     return reference - timedelta(days=reference.weekday())
 
 
-def current_user(authorization: Annotated[str | None, Header()] = None) -> dict[str, Any]:
+def current_user(
+    request: Request,
+    authorization: Annotated[str | None, Header()] = None,
+) -> dict[str, Any]:
     """Valida o JWT no Supabase e devolve o perfil confiável do banco.
 
     O cargo não vem de dados editáveis do usuário. Ele é lido de ``profiles``
@@ -622,7 +689,13 @@ def current_user(authorization: Annotated[str | None, Header()] = None) -> dict[
         rows = db.table("profiles").select("id,email,role,full_name,grade,goal").eq("id", str(auth_user.id)).limit(1).execute().data
         if not rows:
             raise ValueError("Profile not found")
-        return rows[0]
+        profile = rows[0]
+        if request is not None:
+            # O middleware lê esse estado somente depois que a dependência
+            # validou JWT e cargo no banco; nada vem de cabeçalho inventado.
+            request.state.audit_actor_id = profile["id"]
+            request.state.audit_actor_role = profile["role"]
+        return profile
     except HTTPException:
         raise
     except Exception as error:
@@ -657,6 +730,7 @@ API_RATE_LIMITS: dict[str, tuple[int, int]] = {
     "teacher_recommendation": (10, 60 * 60),
     "admin_user_write": (30, 60 * 60),
     "admin_content_write": (60, 60 * 60),
+    "admin_audit_read": (120, 60 * 60),
 }
 
 
@@ -955,6 +1029,7 @@ def login(credentials: LoginRequest, request: Request, response: Response):
     except CaptchaError as error:
         raise HTTPException(status_code=400, detail=str(error)) from error
     identity_hash = rate_limit_hash("identity", credentials.email)
+    request.state.audit_subject_hash = identity_hash
     network_hash = rate_limit_hash("network", client_network(request))
     network_state = login_limit_status(db, network_hash, "network")
     if not network_state.allowed:
@@ -991,6 +1066,18 @@ def login(credentials: LoginRequest, request: Request, response: Response):
     if not session or not session.access_token or not session.refresh_token:
         reject_failed_login(db, identity_state, network_hash)
 
+    auth_user = getattr(auth_response, "user", None) or getattr(session, "user", None)
+    actor_id = str(getattr(auth_user, "id", ""))
+    if actor_id:
+        request.state.audit_actor_id = actor_id
+        try:
+            role_rows = db.table("profiles").select("role").eq("id", actor_id).limit(1).execute().data
+            if role_rows:
+                request.state.audit_actor_role = role_rows[0]["role"]
+        except Exception:
+            # O login continua válido; o ID ainda permite identificar o ator.
+            request.state.audit_actor_role = None
+
     clear_login_failures(db, identity_hash)
     response.headers["Cache-Control"] = "no-store"
     return {
@@ -1017,6 +1104,7 @@ def readiness():
     try:
         # Esta consulta também confirma que a migration da jornada foi aplicada.
         database().table("diagnostic_sessions").select("id").limit(1).execute()
+        database().table("access_audit_logs").select("id").limit(1).execute()
     except Exception as error:
         raise HTTPException(status_code=503, detail="Banco de dados ainda não está pronto.") from error
     return {
@@ -1678,7 +1766,68 @@ def student_lesson(lesson_id: uuid.UUID, user: dict = Depends(require_role("stud
         .execute()
         .data
     )
-    return {**rows[0], "progress": progress[0] if progress else {"completed": False, "time_seconds": 0}}
+    required_exercises = student_required_exercises(db, user["id"], str(lesson_id))
+    return {
+        **rows[0],
+        "progress": progress[0] if progress else {"completed": False, "time_seconds": 0},
+        "required_exercises": required_exercises,
+    }
+
+
+def student_required_exercises(db: Client, student_id: str, lesson_id: str) -> list[dict[str, Any]]:
+    """Expõe a questão sem gabarito e o estado confirmado do checklist."""
+
+    links = (
+        db.table("lesson_required_exercises")
+        .select("question_id,position,questions!inner(id,topic,difficulty,question,options,correct_index,explanation,status)")
+        .eq("lesson_id", lesson_id)
+        .eq("questions.status", "published")
+        .order("position")
+        .execute()
+        .data
+    )
+    question_ids = [row["question_id"] for row in links]
+    if not question_ids:
+        return []
+    attempted = {
+        row["question_id"]
+        for row in (
+            db.table("question_attempts")
+            .select("question_id")
+            .eq("student_id", student_id)
+            .in_("question_id", question_ids)
+            .execute()
+            .data
+        )
+    }
+    completed = {
+        row["question_id"]
+        for row in (
+            db.table("lesson_exercise_completions")
+            .select("question_id")
+            .eq("student_id", student_id)
+            .eq("lesson_id", lesson_id)
+            .in_("question_id", question_ids)
+            .execute()
+            .data
+        )
+    }
+    return [
+        {
+            "id": row["question_id"],
+            "position": row["position"],
+            **hide_question_solution(serialize_question(row["questions"])),
+            "answered": row["question_id"] in attempted,
+            "checked": row["question_id"] in completed,
+        }
+        for row in links
+    ]
+
+
+def lesson_requirements_complete(required_exercises: list[dict[str, Any]]) -> bool:
+    """A ausência de exercícios não bloqueia aulas antigas; os configurados bloqueiam."""
+
+    return all(exercise.get("checked") for exercise in required_exercises)
 
 
 @app.put("/student/lessons/{lesson_id}/progress")
@@ -1693,6 +1842,11 @@ def update_student_lesson_progress(
     enforce_api_rate_limit(db, user["id"], "lesson_progress")
     lesson = student_lesson(lesson_id, user)
     previous = lesson["progress"]
+    if payload.completed and not lesson_requirements_complete(lesson["required_exercises"]):
+        raise HTTPException(
+            status_code=409,
+            detail="Conclua e confirme todos os exercícios obrigatórios antes de avançar.",
+        )
     values = {
         "student_id": user["id"],
         "lesson_id": str(lesson_id),
@@ -1701,6 +1855,40 @@ def update_student_lesson_progress(
         "last_accessed_at": datetime.now(timezone.utc).isoformat(),
     }
     return db.table("lesson_progress").upsert(values, on_conflict="student_id,lesson_id").execute().data[0]
+
+
+@app.post("/student/lessons/{lesson_id}/required-exercises/{question_id}/complete")
+def complete_required_exercise(
+    lesson_id: uuid.UUID,
+    question_id: uuid.UUID,
+    user: dict = Depends(require_role("student")),
+):
+    """Confirma o check somente após encontrar uma tentativa real no banco."""
+
+    db = database()
+    enforce_api_rate_limit(db, user["id"], "lesson_progress")
+    lesson = student_lesson(lesson_id, user)
+    required = next((item for item in lesson["required_exercises"] if item["id"] == str(question_id)), None)
+    if not required:
+        raise HTTPException(status_code=404, detail="Exercício obrigatório não encontrado nesta aula.")
+    if not required["answered"]:
+        raise HTTPException(status_code=409, detail="Responda o exercício antes de marcá-lo como concluído.")
+    saved = (
+        db.table("lesson_exercise_completions")
+        .upsert(
+            {
+                "student_id": user["id"],
+                "lesson_id": str(lesson_id),
+                "question_id": str(question_id),
+                "completed_at": datetime.now(timezone.utc).isoformat(),
+            },
+            on_conflict="student_id,lesson_id,question_id",
+        )
+        .execute()
+        .data[0]
+    )
+    updated = [{**item, "checked": item["checked"] or item["id"] == str(question_id)} for item in lesson["required_exercises"]]
+    return {"completion": saved, "required_complete": lesson_requirements_complete(updated)}
 
 
 @app.get("/student/gamification")
@@ -2028,13 +2216,16 @@ def teacher_student_history(class_id: str, student_id: str, user: TeacherUser):
 
 
 @app.get("/teacher/reports/export")
-def export_teacher_report(class_id: str, user: TeacherUser):
-    """Exporta CSV da turma autorizada com proteção contra fórmulas maliciosas."""
+def export_teacher_report(class_id: str, user: TeacherUser, student_id: str | None = Query(default=None)):
+    """Exporta a turma ou um aluno dela, sempre dentro da disciplina autorizada."""
 
     db = database()
     classroom = owned_teacher_class(db, user["id"], class_id)
     memberships = db.table("class_students").select("student_id").eq("class_id", class_id).execute().data
-    students = teacher_student_summaries(db, classroom["subject_id"], [row["student_id"] for row in memberships])
+    member_ids = [row["student_id"] for row in memberships]
+    if student_id and student_id not in member_ids:
+        raise HTTPException(status_code=404, detail="Estudante não encontrado nesta turma.")
+    students = teacher_student_summaries(db, classroom["subject_id"], [student_id] if student_id else member_ids)
     subject_name = (classroom.get("subjects") or {}).get("name", "Disciplina")
     filename = re.sub(r"[^A-Za-z0-9_-]", "-", classroom["name"]).strip("-") or "turma"
     content = "\ufeff" + build_report_csv(subject_name, classroom["name"], students)
@@ -2187,6 +2378,54 @@ def list_admin_users(_admin: dict = Depends(require_role("admin"))):
     )
 
 
+@app.get("/admin/audit-logs")
+def list_access_audit_logs(
+    days: int = Query(default=7, ge=1, le=180),
+    role: Literal["student", "teacher", "admin", "service"] | None = Query(default=None),
+    outcome: Literal["success", "denied", "error"] | None = Query(default=None),
+    action: str | None = Query(default=None, min_length=3, max_length=100, pattern=r"^[a-z][a-z0-9_.]+$"),
+    limit: int = Query(default=100, ge=1, le=200),
+    admin: dict = Depends(require_role("admin")),
+):
+    """Entrega metadados de auditoria sem revelar rede, token ou payload."""
+
+    db = database()
+    enforce_api_rate_limit(db, admin["id"], "admin_audit_read")
+    since = datetime.now(timezone.utc) - timedelta(days=days)
+    query = (
+        db.table("access_audit_logs")
+        .select("id,actor_id,actor_role,action,request_method,route,status_code,outcome,request_id,occurred_at")
+        .gte("occurred_at", since.isoformat())
+    )
+    if role:
+        query = query.eq("actor_role", role)
+    if outcome:
+        query = query.eq("outcome", outcome)
+    if action:
+        query = query.eq("action", action)
+    events = query.order("occurred_at", desc=True).limit(limit).execute().data
+
+    actor_ids = list({row["actor_id"] for row in events if row.get("actor_id")})
+    profiles = (
+        db.table("profiles").select("id,full_name,role").in_("id", actor_ids).execute().data
+        if actor_ids
+        else []
+    )
+    profiles_by_id = {row["id"]: row for row in profiles}
+    return [
+        {
+            **event,
+            "actor_name": profiles_by_id.get(event.get("actor_id"), {}).get(
+                "full_name",
+                "Sistema ou tentativa anônima",
+            ),
+            "actor_role": event.get("actor_role")
+            or profiles_by_id.get(event.get("actor_id"), {}).get("role"),
+        }
+        for event in events
+    ]
+
+
 def admin_subject_catalog(db: Client) -> list[dict[str, Any]]:
     """Carrega a árvore editorial completa para a administração."""
 
@@ -2195,6 +2434,13 @@ def admin_subject_catalog(db: Client) -> list[dict[str, Any]]:
     modules = db.table("modules").select("id,subject_id,title,position").in_("subject_id", subject_ids).order("position").execute().data if subject_ids else []
     module_ids = [row["id"] for row in modules]
     lessons = db.table("lessons").select("id,module_id,title,position,estimated_minutes,summary,content,learning_objectives,published").in_("module_id", module_ids).order("position").execute().data if module_ids else []
+    lesson_ids = [row["id"] for row in lessons]
+    required_rows = db.table("lesson_required_exercises").select("lesson_id").in_("lesson_id", lesson_ids).execute().data if lesson_ids else []
+    required_counts: dict[str, int] = defaultdict(int)
+    for required in required_rows:
+        required_counts[required["lesson_id"]] += 1
+    for lesson in lessons:
+        lesson["required_exercise_count"] = required_counts[lesson["id"]]
     lessons_by_module: dict[str, list[dict[str, Any]]] = defaultdict(list)
     for lesson in lessons:
         lessons_by_module[lesson["module_id"]].append(lesson)
@@ -2277,6 +2523,69 @@ def update_admin_lesson(
     if not updated:
         raise HTTPException(status_code=404, detail="Aula não encontrada.")
     return updated[0]
+
+
+def admin_lesson_required_exercises(db: Client, lesson_id: uuid.UUID) -> dict[str, Any]:
+    """Carrega apenas questões publicadas da mesma disciplina da aula."""
+
+    lesson_rows = (
+        db.table("lessons")
+        .select("id,modules!inner(subject_id)")
+        .eq("id", str(lesson_id))
+        .limit(1)
+        .execute()
+        .data
+    )
+    if not lesson_rows:
+        raise HTTPException(status_code=404, detail="Aula não encontrada.")
+    subject_id = lesson_rows[0]["modules"]["subject_id"]
+    selected = (
+        db.table("lesson_required_exercises")
+        .select("question_id,position")
+        .eq("lesson_id", str(lesson_id))
+        .order("position")
+        .execute()
+        .data
+    )
+    questions = (
+        db.table("questions")
+        .select("id,topic,difficulty,question")
+        .eq("subject_id", subject_id)
+        .eq("status", "published")
+        .order("created_at", desc=True)
+        .limit(100)
+        .execute()
+        .data
+    )
+    return {"selected_question_ids": [row["question_id"] for row in selected], "questions": questions}
+
+
+@app.get("/admin/lessons/{lesson_id}/mandatory-exercises")
+def get_admin_lesson_required_exercises(lesson_id: uuid.UUID, _admin: dict = Depends(require_role("admin"))):
+    return admin_lesson_required_exercises(database(), lesson_id)
+
+
+@app.put("/admin/lessons/{lesson_id}/mandatory-exercises")
+def set_admin_lesson_required_exercises(
+    lesson_id: uuid.UUID,
+    payload: MandatoryExercisesUpdate,
+    admin: dict = Depends(require_role("admin")),
+):
+    """Substitui a lista, sempre dentro da disciplina que contém a aula."""
+
+    db = database()
+    enforce_api_rate_limit(db, admin["id"], "admin_content_write")
+    configuration = admin_lesson_required_exercises(db, lesson_id)
+    allowed_ids = {question["id"] for question in configuration["questions"]}
+    requested_ids = [str(question_id) for question_id in payload.question_ids]
+    if any(question_id not in allowed_ids for question_id in requested_ids):
+        raise HTTPException(status_code=422, detail="Selecione apenas questões publicadas da disciplina desta aula.")
+    db.table("lesson_required_exercises").delete().eq("lesson_id", str(lesson_id)).execute()
+    if requested_ids:
+        db.table("lesson_required_exercises").insert(
+            [{"lesson_id": str(lesson_id), "question_id": question_id, "position": index + 1} for index, question_id in enumerate(requested_ids)]
+        ).execute()
+    return admin_lesson_required_exercises(db, lesson_id)
 
 
 @app.get("/admin/contents")

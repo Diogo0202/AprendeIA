@@ -8,7 +8,7 @@ Na raiz do repositório:
 .\backend\.venv\Scripts\python.exe -m unittest discover -s backend -v
 ```
 
-A suíte atual possui 47 testes e cobre:
+A suíte atual possui 52 testes, incluindo verificações específicas da auditoria, e cobre:
 
 - fronteiras de aluno, professor e administração;
 - ausência de configuração do Supabase;
@@ -29,6 +29,11 @@ A suíte atual possui 47 testes e cobre:
 - classificação de domínio por tópico e recomendações de aula;
 - rotas protegidas da jornada e da administração;
 - bloqueio direto das tabelas de diagnóstico pela chave pública.
+- catálogo completo de ações auditadas para todas as rotas protegidas;
+- ausência de token, payload, query e IP puro no registro;
+- separação entre acesso bloqueado e erro da aplicação;
+- consulta da auditoria restrita à administração;
+- migration de auditoria sem permissão de atualização.
 
 ## Frontend
 
@@ -51,7 +56,7 @@ npm audit
 
 cd D:\AprendeIA
 .\backend\.venv\Scripts\python.exe -m pip_audit -r backend\requirements.txt
-.\backend\.venv\Scripts\python.exe -m bandit backend\main.py backend\auth_security.py backend\difficulty_alerts.py backend\gamification.py backend\teacher_dashboard.py
+.\backend\.venv\Scripts\python.exe -m bandit backend\main.py backend\access_audit.py backend\auth_security.py backend\difficulty_alerts.py backend\gamification.py backend\teacher_dashboard.py
 ```
 
 Na revisão de 20/09/2026, a instalação dos novos pacotes frontend informou zero vulnerabilidades conhecidas. As verificações finais devem repetir `npm audit`, `pip-audit` e Bandit antes do deploy.

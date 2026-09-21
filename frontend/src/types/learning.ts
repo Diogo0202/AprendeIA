@@ -83,4 +83,11 @@ export type LessonDetail = LessonSummary & {
   content: string;
   modules: { subject_id: string; title: string; subjects: { name: string } };
   progress: { completed: boolean; time_seconds: number; last_accessed_at?: string };
+  required_exercises: RequiredExercise[];
+};
+
+export type RequiredExercise = PublicQuestion & {
+  position: number;
+  answered: boolean;
+  checked: boolean;
 };

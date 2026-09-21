@@ -1,5 +1,6 @@
 import { CSSProperties, FormEvent, useEffect, useState } from "react";
 import { AdminCatalog, type AdminSubject } from "./components/admin/AdminCatalog";
+import { AuditLogPanel } from "./components/admin/AuditLogPanel";
 import FallbackAvatar, { type AvatarKey } from "./components/FallbackAvatar";
 import { DiagnosticAssessment } from "./components/student/DiagnosticAssessment";
 import { LessonReader } from "./components/student/LessonReader";
@@ -51,6 +52,11 @@ const accentOptions: { id: AccentTheme; label: string; color: string }[] = [
 
 function applyAccentTheme(theme: AccentTheme) {
   document.documentElement.dataset.accent = theme;
+}
+
+function applyInterfaceTheme(theme: "light" | "dark") {
+  document.documentElement.dataset.theme = theme;
+  window.localStorage.setItem("aprendeia-interface-theme", theme);
 }
 
 // Dados de demonstração permitem apresentar o TCC sem serviços externos.
@@ -583,6 +589,7 @@ export default function App() {
         profile={profile}
         onProfileChange={setProfile}
         onLogout={logout}
+        onChangePassword={() => setView("forgot-password")}
         onPractice={(subject = "Matemática") => {
           setPracticeSubject(subject);
           setView("practice");
@@ -708,10 +715,25 @@ function Brand() {
 
 /** Cabeçalho comum que identifica a área atual e oferece saída explícita. */
 function Header({ onLogout, area }: { onLogout: () => void; area: string }) {
+  const [theme, setTheme] = useState<"light" | "dark">(() =>
+    window.localStorage.getItem("aprendeia-interface-theme") === "dark" ? "dark" : "light",
+  );
+
+  useEffect(() => applyInterfaceTheme(theme), [theme]);
+
   return (
     <header className="topbar">
       <Brand />
       <span className="area-name">{area}</span>
+      <button
+        className="theme-toggle"
+        type="button"
+        aria-pressed={theme === "dark"}
+        onClick={() => setTheme((current) => current === "dark" ? "light" : "dark")}
+      >
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M20.6 15.2A8.7 8.7 0 0 1 8.8 3.4 8.7 8.7 0 1 0 20.6 15.2Z" /></svg>
+        {theme === "dark" ? "Modo claro" : "Modo escuro"}
+      </button>
       <button className="logout" onClick={onLogout}>
         Sair
       </button>
@@ -992,11 +1014,13 @@ function StudentProfile({
   profile,
   onProfileChange,
   onLogout,
+  onChangePassword,
   onPractice,
 }: {
   profile: UserProfile;
   onProfileChange: (profile: UserProfile) => void;
   onLogout: () => void;
+  onChangePassword: () => void;
   onPractice: (subject?: string) => void;
 }) {
   const [gamification, setGamification] = useState<GamificationSummary | null>(
@@ -1133,7 +1157,19 @@ function StudentProfile({
   return (
     <main className="profile-page">
       <Header area="ÁREA DO ESTUDANTE" onLogout={onLogout} />
-      <section className="profile-content">
+      <div className="student-app-shell">
+        <aside className="student-sidebar" aria-label="Menu do estudante">
+          <div className="student-sidebar-brand"><strong>Seu espaço</strong><small>Aprendizagem guiada</small></div>
+          <nav className="student-nav">
+            <button type="button" onClick={() => document.getElementById("student-subjects")?.scrollIntoView({ behavior: "smooth" })}><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 5.5A2.5 2.5 0 0 1 6.5 3H20v16H6.5A2.5 2.5 0 0 0 4 21.5v-16Z M4 19h16" /></svg>Estudo</button>
+            <button type="button" onClick={() => onPractice()}><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 5h14v10H9l-4 4V5Z M8 9h8M8 12h5" /></svg>Professor</button>
+            <button type="button" onClick={() => onPractice()}><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M7 3h10l2 4-7 14L5 7l2-4Z M7 7h10" /></svg>Exercícios</button>
+            <button type="button" onClick={() => onPractice()}><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3v18M3 12h18M5.6 5.6l12.8 12.8M18.4 5.6 5.6 18.4" /></svg>Perguntar à IA</button>
+            <button type="button" onClick={() => document.getElementById("student-report")?.scrollIntoView({ behavior: "smooth" })}>Boletim</button>
+          </nav>
+          <div className="student-sidebar-account"><button type="button" onClick={onChangePassword}>Alterar senha</button><a href="#student-terms">Termos e política</a><a href="#student-certificates">Certificados</a></div>
+        </aside>
+      <section className="profile-content student-content">
         <section className="student-hero" aria-labelledby="student-name">
           <div className="student-avatar-column">
             <div className="student-avatar-wrap">
@@ -1210,10 +1246,15 @@ function StudentProfile({
         {gamificationError && <p className="gamification-message" role="status">{gamificationError}</p>}
         {learningError && <p className="gamification-message" role="alert">{learningError}</p>}
         {learningLoading && <p className="catalog-loading" role="status">Carregando matérias e recomendações...</p>}
+        <section className="student-report-summary" id="student-report" aria-labelledby="student-report-title">
+          <div><h2 id="student-report-title">Meu boletim</h2><p>Acompanhe a evolução registrada nas aulas e exercícios.</p></div>
+          <dl><div><dt>Acertos</dt><dd>{gamification?.accuracy_percent ?? 0}%</dd></div><div><dt>Aulas concluídas</dt><dd>{studentSubjects.reduce((total, subject) => total + subject.completed_lessons, 0)}</dd></div><div><dt>Certificados</dt><dd id="student-certificates">0</dd></div></dl>
+          <p id="student-terms">Os certificados são liberados ao concluir todos os requisitos da matéria. Seus dados de estudo seguem os Termos de Uso e a Política de Privacidade do AprendeIA.</p>
+        </section>
         <button className="primary-button practice-button" onClick={() => onPractice()}>
           Praticar questões com IA
         </button>
-        <section className="section subject-catalog" aria-labelledby="subjects-title">
+        <section className="section subject-catalog" id="student-subjects" aria-labelledby="subjects-title">
           <div className="catalog-heading">
             <div>
               <h2 id="subjects-title">Todas as matérias</h2>
@@ -1326,6 +1367,7 @@ function StudentProfile({
           </div>
         </section>
       </section>
+      </div>
       {selectedLessonId && (
         <LessonReader
           lessonId={selectedLessonId}
@@ -1801,7 +1843,7 @@ function TeacherProfile({ onLogout }: { onLogout: () => void }) {
         const demoClass = demoTeacherClasses.find((item) => item.id === selectedClassId);
         if (demoClass) {
           setSelectedClass(demoClass);
-          setSelectedStudentId(demoClass.students?.[0]?.id ?? "");
+          setSelectedStudentId([...(demoClass.students ?? [])].sort((first, second) => first.accuracy - second.accuracy)[0]?.id ?? "");
         }
         return;
       }
@@ -1811,7 +1853,7 @@ function TeacherProfile({ onLogout }: { onLogout: () => void }) {
         const nextClass = (await response.json()) as TeacherClass;
         if (!active) return;
         setSelectedClass(nextClass);
-        setSelectedStudentId(nextClass.students?.[0]?.id ?? "");
+        setSelectedStudentId([...(nextClass.students ?? [])].sort((first, second) => first.accuracy - second.accuracy)[0]?.id ?? "");
       } catch {
         if (active) setMessage("Não foi possível abrir esta turma.");
       }
@@ -1822,7 +1864,8 @@ function TeacherProfile({ onLogout }: { onLogout: () => void }) {
     };
   }, [selectedClassId]);
 
-  const selectedStudent = selectedClass.students?.find((student) => student.id === selectedStudentId);
+  const sortedStudents = [...(selectedClass.students ?? [])].sort((first, second) => first.accuracy - second.accuracy);
+  const selectedStudent = sortedStudents.find((student) => student.id === selectedStudentId);
   const tabs: { id: TeacherTab; label: string }[] = [
     { id: "overview", label: "Visão geral" },
     { id: "classes", label: "Turmas" },
@@ -1919,7 +1962,8 @@ function TeacherProfile({ onLogout }: { onLogout: () => void }) {
       setMessage("Relatório de demonstração preparado. Conecte o Supabase para baixar dados reais.");
       return;
     }
-    const response = await apiFetch(`/teacher/reports/export?class_id=${encodeURIComponent(selectedClassId)}`);
+    const studentFilter = selectedStudentId ? `&student_id=${encodeURIComponent(selectedStudentId)}` : "";
+    const response = await apiFetch(`/teacher/reports/export?class_id=${encodeURIComponent(selectedClassId)}${studentFilter}`);
     if (!response.ok) {
       setMessage("Não foi possível exportar o relatório.");
       return;
@@ -1927,7 +1971,7 @@ function TeacherProfile({ onLogout }: { onLogout: () => void }) {
     const url = URL.createObjectURL(await response.blob());
     const anchor = document.createElement("a");
     anchor.href = url;
-    anchor.download = `relatorio-${selectedClass.name}.csv`;
+    anchor.download = `relatorio-${selectedStudent?.full_name ?? selectedClass.name}.csv`;
     anchor.click();
     URL.revokeObjectURL(url);
     setMessage("Relatório exportado em CSV.");
@@ -2138,8 +2182,9 @@ function TeacherProfile({ onLogout }: { onLogout: () => void }) {
                     <input name="student_email" type="email" placeholder="email@escola.com" required disabled={!selectedClassId} aria-label="E-mail do estudante" />
                     <button className="outline-button" disabled={busy || !selectedClassId}>Incluir</button>
                   </form>
+                  <p className="roster-order-note">Exibidos da menor para a maior nota de acertos.</p>
                   <div className="roster-list">
-                    {selectedClass.students?.length ? selectedClass.students.map((student) => (
+                    {sortedStudents.length ? sortedStudents.map((student) => (
                       <button
                         key={student.id}
                         className={`roster-row ${selectedStudentId === student.id ? "selected" : ""}`}
@@ -2189,14 +2234,17 @@ function TeacherProfile({ onLogout }: { onLogout: () => void }) {
           {activeTab === "reports" && (
             <section className="teacher-surface report-studio">
               <div className="report-copy">
-                <p className="eyebrow">EXPORTAÇÃO SEGURA</p>
                 <h2>Relatório da turma</h2>
-                <p>Baixe acertos, tentativas, dificuldade e tempo de estudo da turma selecionada. O arquivo não inclui senhas nem dados de outras disciplinas.</p>
+                <p>Selecione a turma e, se precisar, um aluno. O arquivo inclui somente acertos, tentativas, dificuldade e tempo de estudo — nunca senhas.</p>
+                <div className="report-filters">
+                  <label>TURMA<select value={selectedClassId} onChange={(event) => setSelectedClassId(event.target.value)}>{classes.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}</select></label>
+                  <label>ALUNO<select value={selectedStudentId} onChange={(event) => setSelectedStudentId(event.target.value)}><option value="">Turma inteira</option>{sortedStudents.map((student) => <option key={student.id} value={student.id}>{student.full_name} · {student.accuracy}%</option>)}</select></label>
+                </div>
               </div>
               <div className="report-preview">
                 <span>RELATÓRIO ATUAL</span>
                 <strong>{selectedClass.name}</strong>
-                <small>{selectedClass.student_count} estudantes · {overview.subject}</small>
+                <small>{selectedStudent ? selectedStudent.full_name : `${selectedClass.student_count} estudantes`} · {overview.subject}</small>
                 <button className="primary-button" onClick={() => void exportReport()} disabled={!selectedClassId}>Exportar CSV</button>
               </div>
             </section>
@@ -2395,6 +2443,7 @@ function AdminProfile({ onLogout }: { onLogout: () => void }) {
           Acompanhe o sistema, organize disciplinas, aulas e pessoas.
         </p>
         <AdminCatalog onSubjectsChange={setAdminSubjects} />
+        <AuditLogPanel />
         <section className="teacher-request-queue" aria-labelledby="teacher-requests-title">
           <div className="request-queue-heading">
             <div>

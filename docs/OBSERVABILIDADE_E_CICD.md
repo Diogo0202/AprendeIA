@@ -20,14 +20,17 @@ O FastAPI agora oferece dois sinais próprios para infraestrutura:
 
 As chamadas recebem `X-Request-ID` e geram um log JSON com rota, método, status e tempo em milissegundos. O Railway consegue armazenar esses logs e o mesmo formato pode ser enviado ao Grafana, SigNoz ou outro coletor no próximo passo.
 
+Além do log operacional, as funcionalidades autenticadas geram uma trilha persistente em `access_audit_logs`. O `request_id` liga os dois registros sem copiar corpo, token ou IP puro. A administração consulta essa trilha pelo próprio aplicativo.
+
 No Railway, configure o healthcheck do backend como `/health/live`. Para um monitor externo, use `/health/ready` e crie um alerta para respostas diferentes de 200 ou latência acima do limite escolhido.
 
 ## Ordem segura da publicação
 
 1. Aplicar `supabase/migrations/20260918120000_learning_journey.sql`.
-2. Publicar o backend e conferir `/health/live` e `/health/ready`.
-3. Configurar Turnstile no Supabase Auth, no backend e no frontend.
-4. Publicar o frontend.
-5. Executar o cenário de login, diagnóstico, aula e revisão de questão em produção.
+2. Aplicar `supabase/migrations/20260920120000_access_audit_logs.sql`.
+3. Publicar o backend e conferir `/health/live` e `/health/ready`.
+4. Configurar Turnstile no Supabase Auth, no backend e no frontend.
+5. Publicar o frontend.
+6. Executar o cenário de login, diagnóstico, aula, revisão de questão e consulta da auditoria em produção.
 
 Essa ordem é importante porque o backend novo consulta colunas e tabelas criadas pela migration.
