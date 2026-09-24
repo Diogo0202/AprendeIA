@@ -112,9 +112,31 @@ class SecurityBoundaryTests(unittest.TestCase):
             UserCreate(
                 name="Prof. Carla",
                 email="carla@escola.com",
-                password="senha-segura",
+                password="Senha1segura",
                 role="teacher",
             )
+
+    def test_admin_created_accounts_follow_password_policy(self):
+        """A rota administrativa exige tamanho, maiúscula, minúscula e número."""
+        invalid_passwords = ("Abc1", "abcdef1", "ABCDEF1", "Abcdef")
+        for password in invalid_passwords:
+            with self.subTest(password=password), self.assertRaises(ValidationError):
+                UserCreate(
+                    name="Prof. Carla",
+                    email="carla@escola.com",
+                    password=password,
+                    role="teacher",
+                    subject="Matemática",
+                )
+
+        user = UserCreate(
+            name="Prof. Carla",
+            email="carla@escola.com",
+            password="Senha1",
+            role="teacher",
+            subject="Matemática",
+        )
+        self.assertEqual(user.password, "Senha1")
 
     def test_teacher_request_approval_routes_are_admin_only(self):
         """Solicitar o cadastro não pode transformar a própria conta em professor."""

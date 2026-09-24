@@ -60,11 +60,15 @@ As três funções de limite aceitam somente hashes no formato SHA-256 e só con
 12. `20260915120000_api_security_hardening.sql`
 13. `20260918120000_learning_journey.sql`
 14. `20260920120000_access_audit_logs.sql`
+15. `20260921150000_progressive_login_lockout.sql`
+16. `20260923100000_secure_communications.sql`
 
 ## Estado confirmado
 
-As três migrations de limite de login foram aplicadas ao projeto Supabase do AprendeIA. Um teste transacional confirmou quatro reservas válidas, bloqueio antes da quinta tentativa e tempo de espera positivo sem manter dados de teste.
+As três migrations originais de limite de login foram aplicadas ao projeto Supabase do AprendeIA. A migration progressiva adicionada em 21/09 ainda precisa ser aplicada; localmente, os testes confirmam cinco reservas, bloqueio antes da sexta chamada e cálculo crescente sem armazenar e-mail ou IP em texto puro.
 
 A migration de segurança da API foi criada e validada localmente, mas ainda precisa ser aplicada no Supabase. Ela revoga leitura direta do banco de questões e escrita direta em tentativas e progresso, além de criar o contador das operações autenticadas.
 
-A migration de auditoria mantém os eventos imutáveis para a aplicação: `anon` e `authenticated` não possuem acesso, enquanto `service_role` recebe apenas `select`, `insert` e `delete` para consulta e expiração. O prazo padrão é de 180 dias.
+A migration de auditoria mantém os eventos imutáveis para a aplicação: `anon` e `authenticated` não possuem acesso. A migration de comunicação remove `delete` do `service_role`; a expiração de 180 dias passa pela função restrita `purge_expired_access_audit_logs`, que apaga somente linhas vencidas.
+
+A migration de comunicação cria `conversations`, `conversation_members` e `messages`. Ela ainda precisa ser aplicada no Supabase; criação de conversa, leitura de mensagens e tutor de IA não devem ser considerados prontos em produção antes dessa etapa.

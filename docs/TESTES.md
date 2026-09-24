@@ -17,8 +17,9 @@ A suíte atual possui 52 testes, incluindo verificações específicas da audito
 - gamificação e sequência de estudo;
 - criação de alertas e segredo do resumo semanal;
 - gráficos, importação de conteúdo e exportação CSV;
-- bloqueio na quarta falha de login;
-- limite de quatro autenticações mesmo em uma rajada paralela;
+- bloqueio na quinta falha de login por cinco minutos;
+- limite de cinco autenticações mesmo em uma rajada paralela;
+- duplicação do bloqueio nas novas rodadas de falhas, limitada a 24 horas;
 - normalização e HMAC do e-mail;
 - proxy confiável e tentativa de falsificar IP;
 - login correto e limpeza do contador da conta.
@@ -65,9 +66,9 @@ Na revisão de 20/09/2026, a instalação dos novos pacotes frontend informou ze
 
 As migrations foram verificadas com transações que:
 
-1. registraram quatro falhas para um hash sintético;
-2. reservaram quatro tentativas antes da autenticação;
-3. bloquearam a quinta reserva;
+1. registraram cinco falhas para um hash sintético;
+2. reservaram cinco tentativas antes da autenticação;
+3. bloquearam a sexta reserva e validaram a regra progressiva;
 4. confirmaram `retry_after_seconds > 0`;
 5. fizeram rollback, sem manter registros de teste.
 
@@ -78,3 +79,11 @@ As migrations foram verificadas com transações que:
 - Teste de entrega SMTP em uma caixa de e-mail própria.
 - Teste de deploy no Railway após configurar o novo segredo.
 - Varredura dinâmica com Strix quando o Docker estiver disponível.
+
+## Atualização de comunicação — 24/09/2026
+
+- 69 testes Python passaram, incluindo matriz de cargos, proteção de prompt, auditoria das rotas e permissões da migration.
+- 5 testes React passaram, incluindo o centro de comunicação e o novo dock.
+- O build TypeScript/Vite de produção passou.
+- O Vite manteve um aviso não bloqueante: o bundle principal supera 500 kB e pode ser dividido em uma refatoração posterior.
+- A migration nova foi validada como arquivo, mas não foi aplicada remotamente nesta etapa.

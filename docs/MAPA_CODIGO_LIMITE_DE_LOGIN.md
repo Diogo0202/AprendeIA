@@ -1,7 +1,7 @@
 # Mapa do código: limite de tentativas no login
 
 ## Visão geral
-O login passa pelo backend e bloqueia uma conta após quatro falhas em quinze minutos. Os contadores são atômicos e guardam somente hashes HMAC no Supabase.
+O login passa pelo backend e bloqueia uma conta na quinta falha. A espera começa em cinco minutos e dobra a cada nova rodada de cinco erros, até 24 horas. Os contadores são atômicos e guardam somente hashes HMAC no Supabase.
 
 ## Estrutura
 - `frontend/src/App.tsx` — envia o formulário ao endpoint protegido e mostra o tempo de espera.
@@ -11,6 +11,7 @@ O login passa pelo backend e bloqueia uma conta após quatro falhas em quinze mi
 - `supabase/migrations/20260913143000_login_rate_limit.sql` — guarda e atualiza os contadores com trava de linha.
 - `supabase/migrations/20260913150000_login_rate_limit_policy.sql` — explicita que somente `service_role` usa a tabela.
 - `supabase/migrations/20260913153000_login_attempt_reservation.sql` — reserva tentativas antes de consultar a senha.
+- `supabase/migrations/20260921150000_progressive_login_lockout.sql` — registra reincidência e calcula a espera progressiva.
 
 ## Fluxo principal
 1. `App.tsx` envia e-mail e senha para `POST /auth/login`.

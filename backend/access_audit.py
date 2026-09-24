@@ -12,6 +12,12 @@ from typing import Any
 AUDIT_ACTIONS: dict[tuple[str, str], str] = {
     ("POST", "/auth/login"): "auth.login",
     ("GET", "/health"): "system.health.view",
+    ("GET", "/communications/contacts"): "communications.contacts.list",
+    ("GET", "/communications/conversations"): "communications.conversations.list",
+    ("POST", "/communications/conversations"): "communications.conversations.create",
+    ("GET", "/communications/conversations/{conversation_id}/messages"): "communications.messages.list",
+    ("POST", "/communications/conversations/{conversation_id}/messages"): "communications.messages.send",
+    ("POST", "/communications/ai/messages"): "communications.ai.send",
     ("GET", "/question-bank"): "questions.list",
     ("POST", "/question-bank/generate"): "questions.generate",
     ("GET", "/question-bank/next"): "questions.next",

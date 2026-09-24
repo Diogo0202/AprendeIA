@@ -13,7 +13,7 @@ class AccessAuditTests(unittest.TestCase):
     def test_every_protected_feature_has_an_explicit_audit_action(self):
         """Uma rota nova não pode ficar silenciosa por esquecimento."""
 
-        protected_prefixes = ("/student", "/teacher", "/admin", "/question-bank", "/internal")
+        protected_prefixes = ("/student", "/teacher", "/admin", "/question-bank", "/communications", "/internal")
         missing = []
         for route in app.routes:
             if route.path.startswith(protected_prefixes) or route.path in {"/auth/login", "/health"}:

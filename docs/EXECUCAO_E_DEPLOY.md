@@ -81,7 +81,7 @@ O banco deve vir primeiro porque o backend falha fechado quando a função `rese
 3. Confirmar que `.env`, `.env.local` e chaves não aparecem no `git diff`.
 4. Confirmar todas as migrations aplicadas no Supabase, principalmente as duas de 14 e 15 de setembro.
 5. Configurar `RATE_LIMIT_PEPPER`, OpenAI, SMTP e segredo semanal no Railway.
-6. Testar login correto, quatro senhas erradas e retorno `429`.
+6. Aplicar `20260921150000_progressive_login_lockout.sql` e testar login correto, cinco senhas erradas, retorno `429` e `Retry-After: 300`.
 7. Testar uma conta de cada cargo.
 8. Conferir logs do backend sem credenciais ou tokens.
 

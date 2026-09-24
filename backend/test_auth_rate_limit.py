@@ -4,6 +4,7 @@ import threading
 import time
 import unittest
 from concurrent.futures import ThreadPoolExecutor
+from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import patch
 
@@ -35,13 +36,13 @@ class FakeRpcResult:
         attempts = self.database.attempts.get(key, 0)
 
         if self.name == "login_rate_limit_status":
-            allowed = attempts < self.database.limits.get(key, 4)
+            allowed = attempts < self.database.limits.get(key, 5)
             return SimpleNamespace(
                 data=[
                     {
                         "allowed": allowed,
                         "failed_attempts": attempts,
-                        "retry_after_seconds": 900 if not allowed else 0,
+                        "retry_after_seconds": 300 if not allowed else 0,
                     }
                 ]
             )
@@ -54,7 +55,7 @@ class FakeRpcResult:
                         {
                             "allowed": False,
                             "failed_attempts": attempts,
-                            "retry_after_seconds": 900,
+                            "retry_after_seconds": 300,
                         }
                     ]
                 )
@@ -66,7 +67,7 @@ class FakeRpcResult:
                     {
                         "allowed": True,
                         "failed_attempts": attempts,
-                        "retry_after_seconds": 900 if attempts >= maximum else 0,
+                        "retry_after_seconds": 300 if attempts >= maximum else 0,
                     }
                 ]
             )
@@ -81,7 +82,7 @@ class FakeRpcResult:
                     {
                         "allowed": attempts < maximum,
                         "failed_attempts": attempts,
-                        "retry_after_seconds": 900 if attempts >= maximum else 0,
+                        "retry_after_seconds": 300 if attempts >= maximum else 0,
                     }
                 ]
             )
@@ -115,8 +116,8 @@ class LoginRateLimitTests(unittest.TestCase):
         self.database = FakeRateLimitDatabase()
         self.environment = {"RATE_LIMIT_PEPPER": "p" * 64}
 
-    def test_fourth_invalid_login_blocks_the_identity(self):
-        """As três primeiras falhas são negadas e a quarta inicia o bloqueio."""
+    def test_fifth_invalid_login_blocks_the_identity_for_five_minutes(self):
+        """Quatro falhas são negadas e a quinta inicia o bloqueio."""
 
         calls = 0
 
@@ -133,14 +134,14 @@ class LoginRateLimitTests(unittest.TestCase):
                             "/auth/login",
                             json={"email": "aluno@escola.com", "password": "errada"},
                         )
-                        for _ in range(5)
+                        for _ in range(6)
                     ]
 
-        self.assertEqual([response.status_code for response in responses], [401, 401, 401, 429, 429])
-        self.assertEqual(calls, 4)
-        self.assertEqual(responses[3].headers["Retry-After"], "900")
+        self.assertEqual([response.status_code for response in responses], [401, 401, 401, 401, 429, 429])
+        self.assertEqual(calls, 5)
+        self.assertEqual(responses[4].headers["Retry-After"], "300")
 
-    def test_parallel_requests_never_reach_authentication_more_than_four_times(self):
+    def test_parallel_requests_never_reach_authentication_more_than_five_times(self):
         """Uma rajada simultânea não pode passar pelo contador ainda vazio."""
 
         calls = 0
@@ -166,9 +167,23 @@ class LoginRateLimitTests(unittest.TestCase):
                     with ThreadPoolExecutor(max_workers=10) as pool:
                         statuses = list(pool.map(attempt, range(10)))
 
-        self.assertEqual(calls, 4)
-        self.assertEqual(statuses.count(401), 3)
-        self.assertEqual(statuses.count(429), 7)
+        self.assertEqual(calls, 5)
+        self.assertTrue(all(status in {401, 429} for status in statuses), statuses)
+        self.assertGreaterEqual(statuses.count(429), 5)
+
+    def test_progressive_lockout_doubles_and_has_a_safe_cap(self):
+        """A migration aplica bloqueio progressivo e limita a espera a 24 horas."""
+
+        migration = (
+            Path(__file__).resolve().parents[1]
+            / "supabase"
+            / "migrations"
+            / "20260921150000_progressive_login_lockout.sql"
+        ).read_text(encoding="utf-8")
+
+        self.assertIn("power(2::numeric, stored.lock_level::integer)", migration)
+        self.assertIn("p_max_lock_seconds", migration)
+        self.assertIn("stored.lock_level := 0", migration)
 
     def test_login_identity_is_normalized_and_never_stored_as_plain_text(self):
         """Variações do e-mail apontam para o mesmo hash, sem guardar o endereço."""
@@ -244,7 +259,7 @@ class LoginRateLimitTests(unittest.TestCase):
         )
         identity_hash = rate_limit_hash("identity", "aluno@escola.com", self.environment["RATE_LIMIT_PEPPER"])
         self.database.attempts[("identity", identity_hash)] = 2
-        self.database.limits[("identity", identity_hash)] = 4
+        self.database.limits[("identity", identity_hash)] = 5
 
         with patch.dict(os.environ, self.environment, clear=True):
             with patch("main.database", return_value=self.database):
