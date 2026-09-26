@@ -151,7 +151,7 @@ async def add_security_headers(request: Request, call_next):
                 ensure_ascii=False,
             )
         )
-        action = audit_action_for(request.method, route_path)
+        action = audit_action_for(request.method, route_path, status_code)
         if action:
             network_hash = None
             try:
@@ -170,6 +170,8 @@ async def add_security_headers(request: Request, call_next):
                 status_code=status_code,
                 request_id=request_id,
                 network_hash=network_hash,
+                resource_id=getattr(request.state, "audit_resource_id", None),
+                metadata=getattr(request.state, "audit_metadata", {}),
             )
             await run_in_threadpool(persist_access_audit, record)
 
@@ -268,6 +270,7 @@ class UserCreate(BaseModel):
             raise ValueError(error)
         return value
 
+
     @field_validator("subject")
     @classmethod
     def validate_subject(cls, value: str | None) -> str | None:
@@ -284,6 +287,12 @@ class UserCreate(BaseModel):
         if self.role == "student" and self.subject:
             raise ValueError("Estudante não recebe disciplina no cadastro.")
         return self
+
+
+class PrivacyPolicyAccept(BaseModel):
+    """A pessoa declara a versão que leu; o backend define a hora do aceite."""
+
+    policy_version: Literal["1.0"]
 
 
 class TeacherApproval(BaseModel):
@@ -725,11 +734,13 @@ def current_week_start(today: date | None = None) -> date:
     return reference - timedelta(days=reference.weekday())
 
 
-def current_user(
+def authenticated_profile(
     request: Request,
     authorization: Annotated[str | None, Header()] = None,
+    *,
+    require_privacy_consent: bool = True,
 ) -> dict[str, Any]:
-    """Valida o JWT no Supabase e devolve o perfil confiável do banco.
+    """Valida a sessão e, salvo no endpoint de aceite, exige concordância atual.
 
     O cargo não vem de dados editáveis do usuário. Ele é lido de ``profiles``
     pelo backend, impedindo que alguém se declare professor ou administrador.
@@ -747,7 +758,7 @@ def current_user(
         auth_user = db.auth.get_user(token).user
         if not auth_user:
             raise ValueError("User not found")
-        rows = db.table("profiles").select("id,email,role,full_name,grade,goal").eq("id", str(auth_user.id)).limit(1).execute().data
+        rows = db.table("profiles").select("id,email,role,full_name,grade,goal,privacy_policy_version").eq("id", str(auth_user.id)).limit(1).execute().data
         if not rows:
             raise ValueError("Profile not found")
         profile = rows[0]
@@ -756,11 +767,31 @@ def current_user(
             # validou JWT e cargo no banco; nada vem de cabeçalho inventado.
             request.state.audit_actor_id = profile["id"]
             request.state.audit_actor_role = profile["role"]
+        if require_privacy_consent and profile.get("privacy_policy_version") != "1.0":
+            raise HTTPException(status_code=428, detail="Aceite a Política de Privacidade para continuar.")
         return profile
     except HTTPException:
         raise
     except Exception as error:
         raise HTTPException(status_code=401, detail="Sessão expirada ou inválida.") from error
+
+
+def current_user(
+    request: Request,
+    authorization: Annotated[str | None, Header()] = None,
+) -> dict[str, Any]:
+    """Dependência padrão: só libera a plataforma após o aceite vigente."""
+
+    return authenticated_profile(request, authorization, require_privacy_consent=True)
+
+
+def current_user_pending_privacy(
+    request: Request,
+    authorization: Annotated[str | None, Header()] = None,
+) -> dict[str, Any]:
+    """Única dependência para o endpoint que registra o primeiro aceite."""
+
+    return authenticated_profile(request, authorization, require_privacy_consent=False)
 
 
 def require_role(*roles: str):
@@ -794,6 +825,7 @@ API_RATE_LIMITS: dict[str, tuple[int, int]] = {
     "admin_audit_read": (120, 60 * 60),
     "communication_write": (120, 60 * 60),
     "ai_communication": (20, 60 * 60),
+    "privacy_accept": (5, 60 * 60),
 }
 
 
@@ -1234,6 +1266,7 @@ def readiness():
         database().table("diagnostic_sessions").select("id").limit(1).execute()
         database().table("access_audit_logs").select("id").limit(1).execute()
         database().table("conversations").select("id").limit(1).execute()
+        database().table("privacy_policy_acceptances").select("id").limit(1).execute()
     except Exception as error:
         raise HTTPException(status_code=503, detail="Banco de dados ainda não está pronto.") from error
     return {
@@ -1255,6 +1288,25 @@ def health(_user: dict = Depends(current_user)):
         "supabase_configured": supabase_configured(),
         "captcha_configured": captcha_configured(),
     }
+
+
+@app.post("/privacy/accept", status_code=201)
+def accept_privacy_policy(
+    request: Request,
+    payload: PrivacyPolicyAccept,
+    user: dict = Depends(current_user_pending_privacy),
+):
+    """Registra aceite pendente antes de liberar as demais rotas da conta."""
+
+    db = database()
+    enforce_api_rate_limit(db, user["id"], "privacy_accept")
+    accepted_at = db.rpc(
+        "record_privacy_policy_acceptance",
+        {"target_user_id": user["id"], "target_policy_version": payload.policy_version},
+    ).execute().data
+    request.state.audit_resource_id = user["id"]
+    request.state.audit_metadata = {"policy_version": payload.policy_version}
+    return {"accepted": True, "policy_version": payload.policy_version, "accepted_at": accepted_at}
 
 
 @app.get("/communications/contacts")
@@ -1665,6 +1717,7 @@ def generate_question(request: QuestionRequest, user: TeacherUser):
     }
     payload.pop("id", None); payload.pop("subject", None); payload.pop("skill", None)
     created = db.table("questions").insert(payload).execute().data[0]
+    request.state.audit_resource_id = created["id"]
     created["subjects"] = {"name": request.subject}
     return serialize_question(created)
 
@@ -1749,10 +1802,11 @@ def next_question(subject: str = "Matemática", user: dict = Depends(require_rol
 
 
 @app.post("/question-bank/{question_id}/answer")
-def answer_question(question_id: str, answer: AnswerRequest, user: dict = Depends(require_role("student"))):
+def answer_question(request: Request, question_id: str, answer: AnswerRequest, user: dict = Depends(require_role("student"))):
     """Corrige, registra a tentativa e recalcula a dificuldade recomendada."""
 
     question_id = validate_question_id(question_id)
+    request.state.audit_resource_id = question_id
     if not supabase_configured():
         question = next((item for item in question_bank if item["id"] == question_id), None)
         if not question:
@@ -2576,7 +2630,7 @@ def list_teacher_classes(user: TeacherUser):
 
 
 @app.post("/teacher/classes", status_code=201)
-def create_teacher_class(payload: TeacherClassCreate, user: TeacherUser):
+def create_teacher_class(request: Request, payload: TeacherClassCreate, user: TeacherUser):
     """Cria uma turma já presa à disciplina do professor autenticado."""
 
     db = database()
@@ -2607,6 +2661,7 @@ def create_teacher_class(payload: TeacherClassCreate, user: TeacherUser):
         .execute()
         .data[0]
     )
+    request.state.audit_resource_id = created["id"]
     return {**created, "subject": assignment["subject"], "student_count": 0}
 
 
@@ -2631,7 +2686,7 @@ def teacher_class_detail(class_id: str, user: TeacherUser):
 
 
 @app.post("/teacher/classes/{class_id}/students", status_code=201)
-def add_class_student(class_id: str, payload: ClassStudentCreate, user: TeacherUser):
+def add_class_student(request: Request, class_id: str, payload: ClassStudentCreate, user: TeacherUser):
     """Organiza a turma sem dar acesso para editar qualquer dado pedagógico."""
 
     db = database()
@@ -2664,6 +2719,8 @@ def add_class_student(class_id: str, payload: ClassStudentCreate, user: TeacherU
     if existing:
         raise HTTPException(status_code=409, detail="Estudante já participa desta turma.")
     db.table("class_students").insert({"class_id": class_id, "student_id": student["id"]}).execute()
+    request.state.audit_resource_id = student["id"]
+    request.state.audit_metadata = {"class_id": class_id, "student_id": student["id"]}
     return {"id": student["id"], "full_name": student["full_name"], "grade": student["grade"]}
 
 
@@ -2697,7 +2754,7 @@ def teacher_student_history(class_id: str, student_id: str, user: TeacherUser):
 
 
 @app.get("/teacher/reports/export")
-def export_teacher_report(class_id: str, user: TeacherUser, student_id: str | None = Query(default=None)):
+def export_teacher_report(request: Request, class_id: str, user: TeacherUser, student_id: str | None = Query(default=None)):
     """Exporta a turma ou um aluno dela, sempre dentro da disciplina autorizada."""
 
     db = database()
@@ -2706,6 +2763,8 @@ def export_teacher_report(class_id: str, user: TeacherUser, student_id: str | No
     member_ids = [row["student_id"] for row in memberships]
     if student_id and student_id not in member_ids:
         raise HTTPException(status_code=404, detail="Estudante não encontrado nesta turma.")
+    request.state.audit_resource_id = student_id or class_id
+    request.state.audit_metadata = {"class_id": class_id, "student_id": student_id}
     students = teacher_student_summaries(db, classroom["subject_id"], [student_id] if student_id else member_ids)
     subject_name = (classroom.get("subjects") or {}).get("name", "Disciplina")
     filename = re.sub(r"[^A-Za-z0-9_-]", "-", classroom["name"]).strip("-") or "turma"
@@ -2864,10 +2923,10 @@ def list_admin_users(_admin: dict = Depends(require_role("admin"))):
 
 @app.get("/admin/audit-logs")
 def list_access_audit_logs(
-    days: int = Query(default=7, ge=1, le=180),
+    days: int = Query(default=7, ge=1, le=7),
     role: Literal["student", "teacher", "admin", "service"] | None = Query(default=None),
     outcome: Literal["success", "denied", "error"] | None = Query(default=None),
-    action: str | None = Query(default=None, min_length=3, max_length=100, pattern=r"^[a-z][a-z0-9_.]+$"),
+    action: str | None = Query(default=None, min_length=3, max_length=100, pattern=r"^(?:[A-Z][A-Z0-9_]+|[a-z][a-z0-9_.]+)$"),
     limit: int = Query(default=100, ge=1, le=200),
     admin: dict = Depends(require_role("admin")),
 ):
@@ -2878,18 +2937,18 @@ def list_access_audit_logs(
     since = datetime.now(timezone.utc) - timedelta(days=days)
     query = (
         db.table("access_audit_logs")
-        .select("id,actor_id,actor_role,action,request_method,route,status_code,outcome,request_id,occurred_at")
-        .gte("occurred_at", since.isoformat())
+        .select("id,user_id,role,action,resource,resource_id,created_at,metadata,actor_id,actor_role,request_method,route,status_code,outcome,request_id,occurred_at")
+        .gte("created_at", since.isoformat())
     )
     if role:
-        query = query.eq("actor_role", role)
+        query = query.eq("role", role)
     if outcome:
         query = query.eq("outcome", outcome)
     if action:
         query = query.eq("action", action)
-    events = query.order("occurred_at", desc=True).limit(limit).execute().data
+    events = query.order("created_at", desc=True).limit(limit).execute().data
 
-    actor_ids = list({row["actor_id"] for row in events if row.get("actor_id")})
+    actor_ids = list({row.get("user_id") or row.get("actor_id") for row in events if row.get("user_id") or row.get("actor_id")})
     profiles = (
         db.table("profiles").select("id,full_name,role").in_("id", actor_ids).execute().data
         if actor_ids
@@ -2899,12 +2958,15 @@ def list_access_audit_logs(
     return [
         {
             **event,
-            "actor_name": profiles_by_id.get(event.get("actor_id"), {}).get(
+            "actor_id": event.get("user_id") or event.get("actor_id"),
+            "actor_role": event.get("role") or event.get("actor_role"),
+            "occurred_at": event.get("created_at") or event.get("occurred_at"),
+            "actor_name": profiles_by_id.get(event.get("user_id") or event.get("actor_id"), {}).get(
                 "full_name",
                 "Sistema ou tentativa anônima",
             ),
             "actor_role": event.get("actor_role")
-            or profiles_by_id.get(event.get("actor_id"), {}).get("role"),
+            or profiles_by_id.get(event.get("user_id") or event.get("actor_id"), {}).get("role"),
         }
         for event in events
     ]
@@ -3103,6 +3165,7 @@ def list_teacher_registration_requests(_admin: dict = Depends(require_role("admi
 
 @app.post("/admin/teacher-requests/{user_id}/approve")
 def approve_teacher_registration(
+    request: Request,
     user_id: uuid.UUID,
     payload: TeacherApproval,
     _admin: dict = Depends(require_role("admin")),
@@ -3146,11 +3209,12 @@ def approve_teacher_registration(
         raise HTTPException(status_code=409, detail="Não foi possível aprovar esta solicitação.") from error
     if not approved:
         raise HTTPException(status_code=409, detail="Não foi possível aprovar esta solicitação.")
+    request.state.audit_resource_id = str(user_id)
     return approved[0]
 
 
 @app.post("/admin/users")
-def create_user(payload: UserCreate, _admin: dict = Depends(require_role("admin"))):
+def create_user(request: Request, payload: UserCreate, _admin: dict = Depends(require_role("admin"))):
     """Cria uma conta e atribui a disciplina antes de liberar um professor."""
 
     if payload.role not in {"student", "teacher"}:
@@ -3170,10 +3234,11 @@ def create_user(payload: UserCreate, _admin: dict = Depends(require_role("admin"
             raise HTTPException(status_code=409, detail="Esta disciplina já possui professor.")
     created_user_id: str | None = None
     try:
-        created = db.auth.admin.create_user({"email": str(payload.email), "password": payload.password, "email_confirm": True, "user_metadata": {"full_name": payload.name}})
+        created = db.auth.admin.create_user({"email": str(payload.email), "password": payload.password, "email_confirm": True, "user_metadata": {"full_name": payload.name}, "app_metadata": {"account_origin": "admin_provisioned"}})
         if not created.user:
             raise ValueError("User was not created")
         created_user_id = str(created.user.id)
+        request.state.audit_resource_id = created_user_id
         db.table("profiles").update({"full_name": payload.name, "role": payload.role}).eq("id", created_user_id).execute()
         if payload.role == "teacher" and subject_id:
             db.table("teacher_subjects").insert({"teacher_id": created_user_id, "subject_id": subject_id}).execute()

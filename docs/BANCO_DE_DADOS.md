@@ -62,6 +62,7 @@ As três funções de limite aceitam somente hashes no formato SHA-256 e só con
 14. `20260920120000_access_audit_logs.sql`
 15. `20260921150000_progressive_login_lockout.sql`
 16. `20260923100000_secure_communications.sql`
+17. `20260926120000_privacy_consent_and_audit_schema.sql`
 
 ## Estado confirmado
 
@@ -69,6 +70,6 @@ As três migrations originais de limite de login foram aplicadas ao projeto Supa
 
 A migration de segurança da API foi criada e validada localmente, mas ainda precisa ser aplicada no Supabase. Ela revoga leitura direta do banco de questões e escrita direta em tentativas e progresso, além de criar o contador das operações autenticadas.
 
-A migration de auditoria mantém os eventos imutáveis para a aplicação: `anon` e `authenticated` não possuem acesso. A migration de comunicação remove `delete` do `service_role`; a expiração de 180 dias passa pela função restrita `purge_expired_access_audit_logs`, que apaga somente linhas vencidas.
+A migration de auditoria mantém os eventos imutáveis para a aplicação: `anon` e `authenticated` não possuem acesso. A migration de comunicação remove `delete` do `service_role`; a migration de privacidade reduz a retenção dos logs para até 7 dias e agenda a limpeza horária via Supabase Cron.
 
 A migration de comunicação cria `conversations`, `conversation_members` e `messages`. Ela ainda precisa ser aplicada no Supabase; criação de conversa, leitura de mensagens e tutor de IA não devem ser considerados prontos em produção antes dessa etapa.

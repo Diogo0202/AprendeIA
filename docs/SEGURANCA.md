@@ -77,7 +77,7 @@ Essa defesa reduz o risco, mas não torna a saída do modelo confiável para exe
 - Como o navegador precisa da chave publicável, um cliente avançado ainda pode chamar o Supabase Auth diretamente; os limites nativos do Supabase continuam sendo a proteção desse caminho. Um hook de verificação de senha seria o ponto central ideal quando disponível.
 - O projeto precisa de testes E2E com contas reais de aluno, professor e administração antes de receber dados reais.
 - Logs e alertas operacionais ainda precisam de uma ferramenta de monitoramento em produção.
-- A expiração física dos eventos de auditoria precisa agendar `purge_expired_access_audit_logs`; cada linha já recebe `expires_at` de 180 dias e a aplicação não possui exclusão direta.
+- A migration `20260926120000_privacy_consent_and_audit_schema.sql` agenda a limpeza horária dos logs e aceites detalhados com prazo máximo de 7 dias; após aplicar, confirmar o job `aprendeia-purge-expired-access-logs` no Cron do Supabase.
 - A migration `20260923100000_secure_communications.sql` ainda precisa ser aplicada e validada em homologação antes de liberar mensagens reais.
 - A migration `20260915120000_api_security_hardening.sql` precisa ser aplicada no Supabase e o frontend precisa de novo deploy para os cabeçalhos entrarem em produção.
 - A varredura exploratória do Strix não foi executada porque Strix e Docker não estão disponíveis no PATH desta máquina.

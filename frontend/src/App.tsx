@@ -4,6 +4,11 @@ import { AuditLogPanel } from './components/admin/AuditLogPanel';
 import FallbackAvatar, { type AvatarKey } from './components/FallbackAvatar';
 import { CommunicationCenter } from './components/CommunicationCenter';
 import { NavigationDock } from './components/NavigationDock';
+import {
+  PrivacyConsentCheckbox,
+  PrivacyPolicyAccess,
+  PRIVACY_POLICY_VERSION,
+} from './components/PrivacyPolicyAccess';
 import { DiagnosticAssessment } from './components/student/DiagnosticAssessment';
 import { LessonReader } from './components/student/LessonReader';
 import { QuestionStudio } from './components/teacher/QuestionStudio';
@@ -16,6 +21,7 @@ import type { DiagnosticState, LearningRecommendations, StudentSubject } from '.
 type View =
   | 'login'
   | 'signup'
+  | 'privacy-consent'
   | 'forgot-password'
   | 'reset-password'
   | 'student'
@@ -435,7 +441,7 @@ export default function App() {
     const { data, error } = await supabase
       .from('profiles')
       .select(
-        'id,email,full_name,role,grade,goal,registration_status,requested_subject,avatar_key,featured_badge_id,accent_theme,profile_setup_complete',
+        'id,email,full_name,role,grade,goal,registration_status,requested_subject,avatar_key,featured_badge_id,accent_theme,profile_setup_complete,privacy_policy_version',
       )
       .eq('id', userId)
       .single();
@@ -464,7 +470,13 @@ export default function App() {
       accentTheme: (data.accent_theme || 'wine') as AccentTheme,
       profileSetupComplete: Boolean(data.profile_setup_complete),
     });
-    setView(data.registration_status === 'pending_teacher' ? 'teacher-pending' : role);
+    setView(
+      data.privacy_policy_version !== PRIVACY_POLICY_VERSION
+        ? 'privacy-consent'
+        : data.registration_status === 'pending_teacher'
+          ? 'teacher-pending'
+          : role,
+    );
     setAuthMessage('');
     setAuthLoading(false);
   }
@@ -535,6 +547,12 @@ export default function App() {
     setAuthMessage('');
     setAuthLoading(true);
     const requestedRole = String(data.get('role') || 'student') as SignupRole;
+    const privacyPolicyAccepted = data.get('privacy_policy_accepted') === 'true';
+    if (!privacyPolicyAccepted) {
+      setAuthMessage('Para criar a conta, leia e aceite a Política de Privacidade.');
+      setAuthLoading(false);
+      return;
+    }
     const password = String(data.get('password'));
     const passwordError = passwordPolicyError(password);
     if (passwordError) {
@@ -574,6 +592,9 @@ export default function App() {
           grade: nextProfile.grade,
           requested_role: requestedRole === 'teacher' ? 'teacher' : undefined,
           requested_subject: requestedRole === 'teacher' ? requestedSubject : undefined,
+          privacy_policy_accepted: true,
+          privacy_policy_version: PRIVACY_POLICY_VERSION,
+          account_origin: 'self_service',
         },
       },
     });
@@ -602,6 +623,31 @@ export default function App() {
       setView('login');
       setAuthLoading(false);
     }
+  }
+
+  /** Contas provisionadas ou antigas só entram na plataforma após seu próprio aceite. */
+  async function handleExistingPrivacyConsent(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    const form = event.currentTarget;
+    if (new FormData(form).get('privacy_policy_accepted') !== 'true') {
+      setAuthMessage('Marque a caixa para confirmar que leu e aceita a política.');
+      return;
+    }
+    setAuthLoading(true);
+    const response = await apiFetch('/privacy/accept', {
+      method: 'POST',
+      body: JSON.stringify({ policy_version: PRIVACY_POLICY_VERSION }),
+    });
+    if (!response.ok) {
+      setAuthMessage(
+        await apiError(response, 'Não foi possível salvar seu aceite. Tente novamente.'),
+      );
+      setAuthLoading(false);
+      return;
+    }
+    setAuthMessage('');
+    setView(profile.registrationStatus === 'pending_teacher' ? 'teacher-pending' : profile.role);
+    setAuthLoading(false);
   }
 
   /** Envia o link pelo Supabase sem revelar se o e-mail está cadastrado. */
@@ -660,6 +706,37 @@ export default function App() {
     applyAccentTheme('wine');
     setView('login');
   };
+  if (view === 'privacy-consent')
+    return (
+      <main className="page-shell">
+        <section className="auth-card privacy-consent-page">
+          <Brand />
+          <p className="eyebrow">ANTES DE CONTINUAR</p>
+          <h1>Leia e aceite a política</h1>
+          <p className="subtitle">
+            Precisamos do seu aceite para liberar o uso da plataforma. O registro fica associado à
+            sua conta.
+          </p>
+          <PrivacyPolicyAccess label="Ler a Política de Privacidade" />
+          <form className="auth-form" onSubmit={handleExistingPrivacyConsent}>
+            <PrivacyConsentCheckbox
+              label={`Li e concordo com a Política de Privacidade do AprendeIA, versão ${PRIVACY_POLICY_VERSION}.`}
+            />
+            {authMessage && (
+              <p className="form-message" role="alert">
+                {authMessage}
+              </p>
+            )}
+            <button className="primary-button" type="submit" disabled={authLoading}>
+              {authLoading ? 'Salvando...' : 'Aceitar e continuar'}
+            </button>
+            <button className="text-button" type="button" onClick={() => void logout()}>
+              Sair da conta
+            </button>
+          </form>
+        </section>
+      </main>
+    );
   if (authLoading && view === 'login')
     return (
       <main className="page-shell">
@@ -743,6 +820,9 @@ export default function App() {
             loading={authLoading}
           />
         )}
+        <div className="auth-policy-access">
+          <PrivacyPolicyAccess label="Consultar a Política de Privacidade" />
+        </div>
       </section>
     </main>
   );
@@ -820,6 +900,7 @@ function Header({ onLogout, area }: { onLogout: () => void; area: string }) {
     <header className="topbar">
       <Brand />
       <span className="area-name">{area}</span>
+      <PrivacyPolicyAccess label="Privacidade" />
       <button
         className="theme-toggle"
         type="button"
@@ -1022,6 +1103,10 @@ function Signup({
             Sua senha fica protegida pelo Supabase e não é salva no banco do AprendeIA.
           </p>
         )}
+        <PrivacyConsentCheckbox label="Li e concordo com a Política de Privacidade do AprendeIA." />
+        <div className="privacy-consent-link">
+          <PrivacyPolicyAccess label="Ler a Política de Privacidade" />
+        </div>
         <TurnstileWidget action="signup" />
         {message && (
           <p className="form-message" role="status">

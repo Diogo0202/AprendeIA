@@ -236,6 +236,106 @@ h1 {
   font-size: 12px;
   line-height: 1.55;
 }
+.privacy-consent {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  color: var(--ink-soft);
+  font-size: 13px;
+  font-weight: 500;
+  letter-spacing: 0;
+  line-height: 1.5;
+}
+.privacy-consent input {
+  width: 18px;
+  height: 18px;
+  flex: 0 0 18px;
+  margin: 1px 0 0;
+  accent-color: var(--accent);
+}
+.privacy-consent-link,
+.auth-policy-access {
+  text-align: center;
+}
+.privacy-policy-trigger {
+  border: 0;
+  padding: 5px;
+  color: var(--accent);
+  background: transparent;
+  font: inherit;
+  font-size: 12px;
+  font-weight: 700;
+  text-decoration: underline;
+  text-underline-offset: 3px;
+  cursor: pointer;
+}
+.privacy-policy-trigger:focus-visible,
+.privacy-policy-close:focus-visible {
+  outline: 3px solid color-mix(in srgb, var(--accent) 30%, transparent);
+  outline-offset: 2px;
+}
+.privacy-policy-dialog {
+  width: min(720px, calc(100vw - 32px));
+  max-height: min(82dvh, 850px);
+  padding: 0;
+  border: 1px solid var(--line);
+  border-radius: 18px;
+  color: var(--ink);
+  background: var(--paper);
+  box-shadow: 0 24px 90px rgba(18, 32, 51, 0.24);
+}
+.privacy-policy-dialog::backdrop {
+  background: rgba(18, 32, 51, 0.56);
+  backdrop-filter: blur(3px);
+}
+.privacy-policy-heading {
+  position: sticky;
+  top: 0;
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 16px;
+  padding: 22px 26px 18px;
+  border-bottom: 1px solid var(--line);
+  background: var(--paper);
+}
+.privacy-policy-heading h2 {
+  margin: 0;
+  font-size: 25px;
+}
+.privacy-policy-heading .eyebrow {
+  margin: 0 0 7px;
+}
+.privacy-policy-close {
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 8px 12px;
+  color: var(--ink);
+  background: var(--paper);
+  cursor: pointer;
+}
+.privacy-policy-content {
+  padding: 22px 26px 28px;
+  overflow-y: auto;
+  color: var(--ink-soft);
+  font-size: 14px;
+  line-height: 1.7;
+}
+.privacy-policy-content h3 {
+  margin: 22px 0 5px;
+  color: var(--ink);
+  font-size: 16px;
+}
+.privacy-policy-content p {
+  margin: 0 0 12px;
+}
+.privacy-policy-review-note {
+  margin-top: 22px !important;
+  padding: 12px 14px;
+  border-left: 3px solid #b77816;
+  background: rgba(183, 120, 22, 0.09);
+  font-size: 12px;
+}
 label {
   display: grid;
   gap: 9px;

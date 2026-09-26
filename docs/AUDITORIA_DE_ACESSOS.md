@@ -20,7 +20,7 @@ No login sem sucesso, o e-mail é representado pelo mesmo HMAC usado no limite d
 
 A tabela `access_audit_logs` bloqueia `anon` e `authenticated` com RLS e permissões revogadas. Somente a chave `service_role` do backend grava ou consulta os eventos. A interface de consulta exige `require_role("admin")`, possui limite de requisições e nunca devolve os hashes de rede ou identidade.
 
-Os registros expiram após 180 dias. A coluna `expires_at` permite executar uma limpeza periódica no Supabase ou no job de manutenção do Railway.
+Os registros e as evidências detalhadas de aceite expiram em até 7 dias. A migration `20260926120000_privacy_consent_and_audit_schema.sql` reduz também o prazo das linhas antigas e agenda a rotina `purge_expired_access_audit_logs` de hora em hora via Supabase Cron.
 
 ## Arquivos principais
 

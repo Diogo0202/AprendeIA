@@ -4,14 +4,16 @@ O módulo trabalha somente com metadados técnicos. Corpo, query string, token,
 senha e endereço IP puro nunca entram no registro persistido.
 """
 
+from datetime import datetime, timezone
 from typing import Any
 
 
 # O mapa explícito evita nomes ambíguos e permite provar em teste que cada
 # funcionalidade protegida ganhou um evento de auditoria.
 AUDIT_ACTIONS: dict[tuple[str, str], str] = {
-    ("POST", "/auth/login"): "auth.login",
+    ("POST", "/auth/login"): "LOGIN_SUCCESS",
     ("GET", "/health"): "system.health.view",
+    ("POST", "/privacy/accept"): "privacy.policy.accept",
     ("GET", "/communications/contacts"): "communications.contacts.list",
     ("GET", "/communications/conversations"): "communications.conversations.list",
     ("POST", "/communications/conversations"): "communications.conversations.create",
@@ -19,9 +21,9 @@ AUDIT_ACTIONS: dict[tuple[str, str], str] = {
     ("POST", "/communications/conversations/{conversation_id}/messages"): "communications.messages.send",
     ("POST", "/communications/ai/messages"): "communications.ai.send",
     ("GET", "/question-bank"): "questions.list",
-    ("POST", "/question-bank/generate"): "questions.generate",
+    ("POST", "/question-bank/generate"): "GENERATE_QUESTION",
     ("GET", "/question-bank/next"): "questions.next",
-    ("POST", "/question-bank/{question_id}/answer"): "questions.answer",
+    ("POST", "/question-bank/{question_id}/answer"): "ANSWER_QUESTION",
     ("GET", "/student/subjects"): "student.subjects.view",
     ("GET", "/student/recommendations"): "student.recommendations.view",
     ("GET", "/student/diagnostic"): "student.diagnostic.view",
@@ -38,19 +40,19 @@ AUDIT_ACTIONS: dict[tuple[str, str], str] = {
     ("GET", "/teacher/difficulty-alerts"): "teacher.alerts.list",
     ("GET", "/teacher/overview"): "teacher.overview.view",
     ("GET", "/teacher/classes"): "teacher.classes.list",
-    ("POST", "/teacher/classes"): "teacher.classes.create",
+    ("POST", "/teacher/classes"): "CREATE_CLASS",
     ("GET", "/teacher/classes/{class_id}"): "teacher.classes.view",
-    ("POST", "/teacher/classes/{class_id}/students"): "teacher.classes.student.add",
+    ("POST", "/teacher/classes/{class_id}/students"): "ADD_STUDENT_TO_CLASS",
     ("DELETE", "/teacher/classes/{class_id}/students/{student_id}"): "teacher.classes.student.remove",
     ("GET", "/teacher/classes/{class_id}/students/{student_id}/history"): "teacher.student.history.view",
-    ("GET", "/teacher/reports/export"): "teacher.reports.export",
+    ("GET", "/teacher/reports/export"): "EXPORT_REPORT",
     ("GET", "/teacher/contents"): "teacher.contents.list",
     ("POST", "/teacher/contents"): "teacher.contents.create",
     ("POST", "/teacher/contents/import"): "teacher.contents.import",
     ("POST", "/teacher/recommendations"): "teacher.recommendations.generate",
     ("GET", "/admin/overview"): "admin.overview.view",
     ("GET", "/admin/users"): "admin.users.list",
-    ("POST", "/admin/users"): "admin.users.create",
+    ("POST", "/admin/users"): "CREATE_USER",
     ("GET", "/admin/subjects"): "admin.subjects.list",
     ("POST", "/admin/subjects"): "admin.subjects.create",
     ("PUT", "/admin/subjects/{subject_id}"): "admin.subjects.update",
@@ -61,15 +63,17 @@ AUDIT_ACTIONS: dict[tuple[str, str], str] = {
     ("PUT", "/admin/lessons/{lesson_id}/mandatory-exercises"): "admin.lessons.exercises.update",
     ("GET", "/admin/contents"): "admin.contents.list",
     ("GET", "/admin/teacher-requests"): "admin.teacher_requests.list",
-    ("POST", "/admin/teacher-requests/{user_id}/approve"): "admin.teacher_requests.approve",
+    ("POST", "/admin/teacher-requests/{user_id}/approve"): "APPROVE_TEACHER",
     ("GET", "/admin/audit-logs"): "admin.audit_logs.list",
     ("POST", "/internal/weekly-difficulty-summary"): "system.weekly_summary.send",
 }
 
 
-def audit_action_for(method: str, route: str) -> str | None:
+def audit_action_for(method: str, route: str, status_code: int | None = None) -> str | None:
     """Traduz método e template da rota para uma ação estável."""
 
+    if method.upper() == "POST" and route == "/auth/login" and status_code is not None:
+        return "LOGIN_SUCCESS" if 200 <= status_code < 400 else "LOGIN_FAILED"
     return AUDIT_ACTIONS.get((method.upper(), route))
 
 
@@ -94,10 +98,19 @@ def build_access_audit_record(
     status_code: int,
     request_id: str,
     network_hash: str | None,
+    resource_id: str | None = None,
+    metadata: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     """Monta a linha com uma lista fechada de campos permitidos."""
 
     safe_role = actor_role if actor_role in {"student", "teacher", "admin", "service"} else None
+    safe_metadata = {
+        key: value
+        for key, value in (metadata or {}).items()
+        if key in {"class_id", "student_id", "policy_version", "policy_hash"}
+        and isinstance(value, (str, int, float, bool, type(None)))
+    }
+    timestamp = datetime.now(timezone.utc).isoformat()
     return {
         "actor_id": actor_id,
         "actor_role": safe_role,
@@ -109,4 +122,12 @@ def build_access_audit_record(
         "outcome": audit_outcome(status_code),
         "request_id": request_id,
         "network_hash": network_hash,
+        # Os campos novos convivem com os antigos durante a migração dos leitores.
+        "user_id": actor_id,
+        "role": safe_role,
+        "resource": route[:180],
+        "resource_id": resource_id,
+        "ip_hash": network_hash,
+        "created_at": timestamp,
+        "metadata": safe_metadata,
     }
