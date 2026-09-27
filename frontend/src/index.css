@@ -246,12 +246,37 @@ h1 {
   letter-spacing: 0;
   line-height: 1.5;
 }
+.privacy-consent-card {
+  padding: 14px;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: var(--control);
+  transition:
+    border-color 160ms ease,
+    background-color 160ms ease;
+}
+.privacy-consent-card:has(input:checked) {
+  border-color: var(--accent);
+  background: var(--rose-soft);
+}
+.privacy-consent-card:has(input:focus-visible) {
+  outline: 3px solid color-mix(in srgb, var(--accent) 28%, transparent);
+  outline-offset: 2px;
+}
 .privacy-consent input {
   width: 18px;
   height: 18px;
   flex: 0 0 18px;
   margin: 1px 0 0;
   accent-color: var(--accent);
+  cursor: pointer;
+}
+.privacy-consent-required {
+  display: block;
+  margin: 6px 0 0 28px;
+  color: var(--ink-muted);
+  font-size: 11px;
+  font-weight: 600;
 }
 .privacy-consent-link,
 .auth-policy-access {

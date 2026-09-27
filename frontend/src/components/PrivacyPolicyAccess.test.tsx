@@ -10,10 +10,19 @@ describe('Política de Privacidade e consentimento', () => {
   afterEach(() => vi.restoreAllMocks());
 
   it('exige uma marcação afirmativa no formulário', () => {
-    render(<PrivacyConsentCheckbox label="Li e aceito a política" />);
+    render(
+      <PrivacyConsentCheckbox
+        label="Li e aceito a política"
+        requiredDescription="Aceite obrigatório para criar a conta."
+      />,
+    );
     const checkbox = screen.getByRole('checkbox', { name: 'Li e aceito a política' });
     expect(checkbox).toBeRequired();
+    expect(checkbox).toHaveAttribute('aria-required', 'true');
     expect(checkbox).toHaveAttribute('value', 'true');
+    expect(screen.getByText('Aceite obrigatório para criar a conta.')).toBeInTheDocument();
+    fireEvent.click(checkbox);
+    expect(checkbox).toBeChecked();
   });
 
   it('permite consultar a versão vigente da política', () => {

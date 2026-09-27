@@ -1,14 +1,36 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useId, useRef, useState } from 'react';
 
 export const PRIVACY_POLICY_VERSION = '1.0';
 
 /** O navegador também valida o campo; o backend repete a exigência no cadastro. */
-export function PrivacyConsentCheckbox({ label }: { label: string }) {
+export function PrivacyConsentCheckbox({
+  label,
+  requiredDescription = 'Obrigatório para criar a conta ou continuar usando a plataforma.',
+}: {
+  label: string;
+  requiredDescription?: string;
+}) {
+  const inputId = useId();
+  const hintId = `${inputId}-privacy-hint`;
+
   return (
-    <label className="privacy-consent">
-      <input name="privacy_policy_accepted" type="checkbox" value="true" required />
-      <span>{label}</span>
-    </label>
+    <div className="privacy-consent-card">
+      <label className="privacy-consent" htmlFor={inputId}>
+        <input
+          id={inputId}
+          name="privacy_policy_accepted"
+          type="checkbox"
+          value="true"
+          aria-required="true"
+          aria-describedby={hintId}
+          required
+        />
+        <span>{label}</span>
+      </label>
+      <small id={hintId} className="privacy-consent-required">
+        {requiredDescription}
+      </small>
+    </div>
   );
 }
 
