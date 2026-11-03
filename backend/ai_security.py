@@ -48,7 +48,13 @@ def normalize_ai_text(value: str, *, max_length: int) -> str:
 def has_prompt_injection(value: str) -> bool:
     """Detecta tentativas explícitas de substituir a hierarquia do prompt."""
 
-    normalized = unicodedata.normalize("NFKC", value)
+    # Remover caracteres de formatação invisíveis apenas da cópia analisada
+    # impede que um caractere de largura zero quebre as palavras detectadas.
+    normalized = "".join(
+        character
+        for character in unicodedata.normalize("NFKC", value)
+        if unicodedata.category(character) != "Cf"
+    )
     return any(pattern.search(normalized) for pattern in INJECTION_PATTERNS)
 
 
