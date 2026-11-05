@@ -17,7 +17,7 @@
   -webkit-font-smoothing: antialiased;
   --ink: #172235;
   --ink-soft: #4f5d70;
-  --ink-muted: #7c8796;
+  --ink-muted: #596575;
   --paper: #fffdfd;
   --canvas: #faf7f8;
   --accent: #c7193b;
@@ -25,7 +25,8 @@
   --accent-soft: #fff0f3;
   --accent-canvas: #fff8f8;
   --accent-track: #f8dfe4;
-  --accent-focus: #e694a5;
+  --accent-focus: #9f1430;
+  --accent-fill: #c7193b;
   --accent-shadow: rgb(199 25 59 / 14%);
   --rose: var(--accent);
   --rose-deep: var(--accent-deep);
@@ -42,7 +43,8 @@
   --accent-soft: #eaf6fa;
   --accent-canvas: #f5fbfd;
   --accent-track: #cee8f0;
-  --accent-focus: #79b7ca;
+  --accent-focus: #10536a;
+  --accent-fill: #176b87;
   --accent-shadow: rgb(23 107 135 / 16%);
 }
 
@@ -52,7 +54,8 @@
   --accent-soft: #edf7f1;
   --accent-canvas: #f6fbf8;
   --accent-track: #d4e9dc;
-  --accent-focus: #88b89c;
+  --accent-focus: #24563d;
+  --accent-fill: #2f6f4e;
   --accent-shadow: rgb(47 111 78 / 16%);
 }
 
@@ -62,7 +65,8 @@
   --accent-soft: #fff4e8;
   --accent-canvas: #fffaf4;
   --accent-track: #f2dcc4;
-  --accent-focus: #d7a36f;
+  --accent-focus: #773f10;
+  --accent-fill: #995216;
   --accent-shadow: rgb(153 82 22 / 16%);
 }
 
@@ -70,7 +74,7 @@
   color-scheme: dark;
   --ink: #f1f5f9;
   --ink-soft: #b8c2d1;
-  --ink-muted: #8f9bad;
+  --ink-muted: #bdc8d8;
   --paper: #111827;
   --canvas: #0b1120;
   --control: #182235;
@@ -78,6 +82,24 @@
   --accent-canvas: #101725;
   --accent-soft: color-mix(in srgb, var(--accent) 22%, #111827);
   --accent-track: color-mix(in srgb, var(--accent) 32%, #111827);
+  --accent: #ff9db2;
+  --accent-deep: #ffb3c3;
+  --accent-focus: #ffb3c3;
+}
+:root[data-theme='dark'][data-accent='ocean'] {
+  --accent: #7ed5ef;
+  --accent-deep: #a4e6f9;
+  --accent-focus: #a4e6f9;
+}
+:root[data-theme='dark'][data-accent='forest'] {
+  --accent: #8edbb0;
+  --accent-deep: #afeac8;
+  --accent-focus: #afeac8;
+}
+:root[data-theme='dark'][data-accent='amber'] {
+  --accent: #ffc17e;
+  --accent-deep: #ffd5a6;
+  --accent-focus: #ffd5a6;
 }
 * {
   box-sizing: border-box;
@@ -99,7 +121,7 @@ body {
 /* A autenticação usa altura dinâmica para não saltar em navegadores móveis. */
 .page-shell {
   min-height: 100dvh;
-  background: linear-gradient(120deg, #fff 0%, #fff 58%, var(--accent-canvas) 100%);
+  background: linear-gradient(120deg, var(--paper) 0%, var(--paper) 58%, var(--accent-canvas) 100%);
   display: flex;
   justify-content: center;
   padding: 72px 24px;
@@ -299,6 +321,71 @@ h1 {
   outline: 3px solid color-mix(in srgb, var(--accent) 30%, transparent);
   outline-offset: 2px;
 }
+/* O formulário reaproveita as cores existentes e limita textos longos em telas pequenas. */
+.privacy-requests,
+.privacy-request-list,
+.privacy-requests fieldset {
+  display: grid;
+  gap: 16px;
+  min-width: 0;
+}
+.privacy-requests fieldset {
+  margin: 0;
+  padding: 14px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+}
+.privacy-requests label {
+  display: grid;
+  gap: 6px;
+}
+.privacy-requests textarea,
+.privacy-requests input,
+.privacy-requests select {
+  box-sizing: border-box;
+  width: 100%;
+  min-width: 0;
+  padding: 10px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  color: var(--ink);
+  background: var(--control);
+  font: inherit;
+}
+.privacy-requests textarea {
+  min-height: 90px;
+  resize: vertical;
+}
+.privacy-request-card {
+  padding: 16px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  overflow-wrap: anywhere;
+}
+.privacy-request-card p {
+  white-space: pre-wrap;
+}
+.privacy-request-card h4 {
+  margin-top: 0;
+}
+.privacy-requests :focus-visible {
+  outline: 3px solid var(--accent-focus);
+  outline-offset: 2px;
+}
+.privacy-requests button:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+/* A nova entrada do cabeçalho precisa caber sem ocultar os botões em celulares. */
+@media (max-width: 680px) {
+  .topbar {
+    flex-wrap: wrap;
+    gap: 12px;
+  }
+  .topbar .brand {
+    margin-right: auto;
+  }
+}
 .privacy-policy-dialog {
   width: min(720px, calc(100vw - 32px));
   max-height: min(82dvh, 850px);
@@ -353,6 +440,103 @@ h1 {
 }
 .privacy-policy-content p {
   margin: 0 0 12px;
+}
+.legal-documents {
+  border: 1px solid var(--line);
+  border-radius: 16px;
+  background: var(--paper);
+  color: var(--ink);
+  overflow: hidden;
+}
+.legal-documents-heading {
+  padding: 22px 26px 0;
+}
+.legal-documents-heading h2 {
+  margin: 0;
+  font-size: 24px;
+}
+.legal-documents-heading .eyebrow {
+  margin: 0 0 7px;
+}
+.legal-documents-tabs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  padding: 16px 26px;
+  border-bottom: 1px solid var(--line);
+}
+.legal-documents-tabs button {
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  padding: 8px 14px;
+  color: var(--ink-soft);
+  background: var(--control);
+  font: inherit;
+  font-size: 13px;
+  font-weight: 700;
+  cursor: pointer;
+}
+.legal-documents-tabs button[aria-pressed='true'] {
+  border-color: var(--accent);
+  color: var(--accent-deep);
+  background: var(--accent-soft);
+}
+.legal-documents-tabs button:focus-visible {
+  outline: 3px solid var(--accent-focus);
+  outline-offset: 2px;
+}
+.legal-documents .privacy-policy-content ul {
+  margin: 0 0 12px;
+  padding-left: 20px;
+}
+.legal-documents .privacy-policy-content a {
+  color: var(--accent-deep);
+}
+.legal-article-list {
+  display: grid;
+  gap: 10px;
+  margin: 10px 0 8px;
+}
+.legal-article-list article {
+  display: grid;
+  gap: 2px;
+  padding: 12px 14px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: var(--canvas);
+}
+.legal-article-list strong {
+  color: var(--ink);
+}
+.legal-article-list p {
+  margin: 0;
+}
+.legal-article-list small {
+  color: var(--ink-muted);
+  font-size: 12px;
+}
+.legal-reference-list {
+  display: grid;
+  gap: 10px;
+  list-style: none;
+  padding-left: 0 !important;
+}
+.legal-reference-list li {
+  display: grid;
+  gap: 2px;
+}
+.legal-reference-list a {
+  font-weight: 700;
+}
+@media (max-width: 640px) {
+  .legal-documents-heading,
+  .legal-documents-tabs {
+    padding-left: 16px;
+    padding-right: 16px;
+  }
+  .legal-documents .privacy-policy-content {
+    padding: 18px 16px 22px;
+  }
 }
 .privacy-policy-review-note {
   margin-top: 22px !important;
@@ -429,7 +613,7 @@ select {
   height: 48px;
   border: 0;
   border-radius: 10px;
-  background: var(--accent);
+  background: var(--accent-fill);
   color: #fff;
   font: inherit;
   font-weight: 700;
@@ -3610,4 +3794,196 @@ select {
     transform: none;
     transition: none;
   }
+}
+
+/* WCAG 2.2: foco consistente, sem depender da cor de destaque do preenchimento. */
+html {
+  scroll-padding-block: 24px;
+}
+:root {
+  color-scheme: light;
+}
+:root[data-theme='dark'] {
+  color-scheme: dark;
+}
+:root body :focus-visible {
+  outline: 3px solid var(--accent-focus);
+  outline-offset: 3px;
+  scroll-margin-block: 24px;
+}
+.account-type:has(input:focus-visible),
+.privacy-consent-card:has(input:focus-visible),
+.avatar-option:has(input:focus-visible),
+.badge-option:has(input:focus-visible),
+.accent-option:has(input:focus-visible) {
+  outline: 3px solid var(--accent-focus);
+  outline-offset: 3px;
+}
+.skip-link {
+  position: fixed;
+  inset: 8px auto auto 8px;
+  z-index: 10001;
+  padding: 12px 16px;
+  max-width: calc(100% - 16px);
+  color: var(--ink);
+  background: var(--paper);
+  border: 2px solid var(--accent-focus);
+  border-radius: 8px;
+  clip-path: inset(50%);
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+}
+.skip-link:focus {
+  clip-path: none;
+  width: auto;
+  height: auto;
+}
+/* Superfícies e textos que ainda tinham cores claras fixas. */
+.brand {
+  color: var(--ink);
+}
+.area-name {
+  color: var(--ink-muted);
+}
+.password-field button {
+  min-width: 32px;
+  min-height: 32px;
+  top: 7px;
+  right: 8px;
+}
+.subtitle,
+.switch-copy,
+.check,
+label,
+.password-field button {
+  color: var(--ink-soft);
+}
+input,
+select,
+.teacher-form textarea {
+  color: var(--ink);
+  background: var(--paper);
+  border-color: var(--ink-muted);
+}
+input::placeholder,
+textarea::placeholder {
+  color: var(--ink-muted);
+  opacity: 1;
+}
+.category-filters button.active {
+  background: var(--accent-fill);
+}
+.app-dock-horizontal {
+  flex-wrap: wrap;
+}
+.app-dock-label {
+  overflow-wrap: anywhere;
+}
+.privacy-policy-dialog {
+  scroll-padding-top: 150px;
+}
+@media (max-width: 680px) {
+  .student-nav.app-dock,
+  .teacher-nav.app-dock {
+    flex-wrap: wrap;
+    overflow: visible;
+  }
+  .student-nav.app-dock button {
+    flex: 1 1 120px;
+  }
+  .teacher-heading,
+  .form-row {
+    flex-wrap: wrap;
+  }
+  .teacher-main,
+  .student-content {
+    min-width: 0;
+  }
+  .account-type-picker {
+    grid-template-columns: 1fr;
+  }
+  .subject-grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .privacy-policy-heading {
+    position: static;
+    flex-wrap: wrap;
+    padding: 16px;
+  }
+  .privacy-policy-content {
+    padding: 16px;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    scroll-behavior: auto !important;
+  }
+}
+/* Contrastes medidos no painel do estudante, sem mudar sua estrutura. */
+.student-hero,
+.subject-card,
+.profile-panel,
+.catalog-empty,
+.achievement-chip,
+.category-filters button,
+.subject-search input,
+.level-ring::before {
+  background: var(--paper);
+}
+.journey-stats dt,
+.level-card p,
+.level-card small,
+.catalog-heading p,
+.subject-card p,
+.course-meta,
+.subject-card-footer > span,
+.section-heading span,
+.catalog-empty,
+.achievement-empty,
+.gamification-message,
+.achievement-shelf h2,
+.level-ring > span {
+  color: var(--ink-soft);
+}
+.journey-stats dd,
+.course-meta strong {
+  color: var(--ink);
+}
+.catalog-empty strong,
+.category-filters button:not(.active):not(:hover) {
+  color: var(--ink);
+}
+.subject-card-footer button,
+.category-filters button.active,
+.category-filters button:hover {
+  background: var(--accent-fill);
+}
+
+/* Abas docentes: corrigem os contrastes medidos na auditoria, inclusive no escuro. */
+.medium {
+  color: #754400;
+  background: #fff1d9;
+}
+.report-preview,
+.ai-empty {
+  background: var(--paper);
+  color: var(--ink);
+}
+.report-preview > span,
+.report-preview small,
+.ai-result > .ai-empty p {
+  color: var(--ink-soft);
+}
+.report-preview > strong,
+.ai-empty h3 {
+  color: var(--ink);
+}
+.ai-empty > span {
+  background: var(--accent-fill);
+  color: #fff;
 }

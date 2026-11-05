@@ -31,8 +31,14 @@ const outcomeLabels = {
   error: 'Erro',
 };
 
+type AuditLogPanelProps = {
+  /** Quando presente, mostra só o histórico desta pessoa. */
+  user?: { id: string; name: string } | null;
+  onClearUser?: () => void;
+};
+
 /** Mostra para a administração apenas os metadados seguros da auditoria. */
-export function AuditLogPanel() {
+export function AuditLogPanel({ user = null, onClearUser }: AuditLogPanelProps = {}) {
   const [events, setEvents] = useState<AuditEvent[]>([]);
   const [days, setDays] = useState('7');
   const [role, setRole] = useState('');
@@ -45,6 +51,7 @@ export function AuditLogPanel() {
     const params = new URLSearchParams({ days, limit: '100' });
     if (role) params.set('role', role);
     if (outcome) params.set('outcome', outcome);
+    if (user) params.set('user_id', user.id);
     const response = await apiFetch(`/admin/audit-logs?${params.toString()}`);
     if (!response.ok) {
       setMessage(await apiError(response, 'Não foi possível carregar a auditoria.'));
@@ -54,7 +61,7 @@ export function AuditLogPanel() {
     setEvents((await response.json()) as AuditEvent[]);
     setMessage('');
     setLoading(false);
-  }, [days, outcome, role]);
+  }, [days, outcome, role, user]);
 
   useEffect(() => {
     void load();
@@ -65,8 +72,18 @@ export function AuditLogPanel() {
       <div className="audit-heading">
         <div>
           <p className="eyebrow">SEGURANÇA E RASTREABILIDADE</p>
-          <h2 id="audit-title">Auditoria de acessos</h2>
-          <p>Registros técnicos das funcionalidades, sem senha, token, conteúdo ou IP puro.</p>
+          <h2 id="audit-title">
+            {user ? `Atividades de ${user.name}` : 'Histórico de atividades'}
+          </h2>
+          <p>
+            Registros técnicos dos últimos 7 dias, sem senha, token, conteúdo ou IP puro. Registros
+            mais antigos são apagados pela política de retenção.
+          </p>
+          {user && onClearUser && (
+            <button className="outline-button" type="button" onClick={onClearUser}>
+              Ver todos os usuários
+            </button>
+          )}
         </div>
         <button
           className="outline-button"
@@ -111,7 +128,12 @@ export function AuditLogPanel() {
           {message}
         </p>
       )}
-      <div className="audit-table-wrap">
+      <div
+        className="audit-table-wrap"
+        tabIndex={0}
+        role="region"
+        aria-label="Registros de auditoria, tabela com rolagem"
+      >
         <table className="audit-table">
           <thead>
             <tr>

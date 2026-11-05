@@ -1,5 +1,7 @@
 # Gamificação do estudante
 
+O [ranking semanal e seu checklist](RANKING_E_CONQUISTAS.md) descrevem a evolução desta área. A migration nova passa a registrar XP por evento sem repetição. O texto abaixo documenta o cálculo original.
+
 A tela inicial do estudante transforma o progresso já salvo no sistema em sinais simples de evolução. A ideia é incentivar a constância e o aprendizado, sem criar uma competição entre alunos.
 
 ## Como os pontos são calculados

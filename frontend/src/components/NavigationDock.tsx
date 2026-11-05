@@ -25,7 +25,11 @@ export function NavigationDock({
   const dockRef = useRef<HTMLElement>(null);
 
   function updateDistances(event: PointerEvent<HTMLElement>) {
-    if (event.pointerType === 'touch') return;
+    if (
+      event.pointerType === 'touch' ||
+      window.matchMedia('(prefers-reduced-motion: reduce)').matches
+    )
+      return;
     const horizontal = orientation === 'horizontal';
     dockRef.current?.querySelectorAll<HTMLElement>('.app-dock-item').forEach((item) => {
       const bounds = item.getBoundingClientRect();
@@ -60,7 +64,10 @@ export function NavigationDock({
           className={`app-dock-item ${item.active ? 'active' : ''}`}
           style={{ '--dock-distance': 4 } as DockStyle}
           onClick={item.onSelect}
-          onFocus={(event) => event.currentTarget.style.setProperty('--dock-distance', '0')}
+          onFocus={(event) => {
+            event.currentTarget.style.setProperty('--dock-distance', '4');
+            event.currentTarget.scrollIntoView({ block: 'nearest', inline: 'nearest' });
+          }}
           onBlur={(event) => event.currentTarget.style.setProperty('--dock-distance', '4')}
           aria-current={item.active ? 'page' : undefined}
         >

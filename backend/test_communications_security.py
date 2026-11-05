@@ -11,7 +11,7 @@ from main import AICommunicationRequest, app, require_role
 
 
 class CommunicationsSecurityTests(unittest.TestCase):
-    def test_communication_routes_exist_without_admin_access(self):
+    def test_administration_uses_human_chat_but_not_the_ai_tutor(self):
         paths = {route.path for route in app.routes}
         expected = {
             "/communications/contacts",
@@ -19,11 +19,30 @@ class CommunicationsSecurityTests(unittest.TestCase):
             "/communications/conversations/{conversation_id}/messages",
             "/communications/ai/messages",
         }
-
         self.assertTrue(expected.issubset(paths))
-        with self.assertRaises(Exception) as error:
-            require_role("student", "teacher")({"role": "admin"})
-        self.assertEqual(error.exception.status_code, 403)
+
+        def roles_for(path, method):
+            route = next(r for r in app.routes if getattr(r, "path", None) == path and method in r.methods)
+            dependency = route.dependant.dependencies[-1].call
+            allowed = []
+            for role in ("student", "teacher", "admin"):
+                try:
+                    dependency({"role": role})
+                    allowed.append(role)
+                except Exception as error:
+                    self.assertEqual(error.status_code, 403)
+            return allowed
+
+        self.assertEqual(roles_for("/communications/contacts", "GET"), ["student", "teacher", "admin"])
+        self.assertEqual(roles_for("/communications/ai/messages", "POST"), ["student", "teacher"])
+
+    def test_admin_panel_migration_keeps_students_away_from_administration(self):
+        migration = (
+            Path(__file__).resolve().parents[1] / "supabase" / "migrations" / "20261105120000_admin_panel.sql"
+        ).read_text(encoding="utf-8")
+        self.assertIn("(actor_role = 'admin' and recipient_role = 'teacher')", migration)
+        self.assertNotIn("recipient_role = 'student' and actor_role = 'admin'", migration)
+        self.assertIn("if 'student' in (actor_role, recipient_role) then", migration)
 
     def test_ai_message_rejects_explicit_prompt_injection(self):
         with self.assertRaises(ValidationError):

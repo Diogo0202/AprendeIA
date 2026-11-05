@@ -18,7 +18,7 @@ O React envia e-mail e senha para `POST /auth/login`. O backend verifica o limit
 
 - O cadastro pede confirmação por e-mail e direciona o retorno à origem atual do frontend (`emailRedirectTo`). Essa origem precisa estar na lista de Redirect URLs do projeto Supabase; em produção, mantenha somente domínios exatos e necessários.
 - A senha deve ter de 6 a 128 caracteres e incluir pelo menos uma letra maiúscula, uma letra minúscula e um número. A interface explica a regra no cadastro e na redefinição, e a rota administrativa aplica a mesma validação.
-- A regra efetiva do cadastro público também precisa ser configurada em Authentication > Sign In / Providers > Email no Supabase.
+- O cadastro público, a solicitação docente e a redefinição chamam o Supabase Auth direto do navegador (`signUp` e `updateUser`), sem passar pela API. Nesses fluxos, só o Supabase aplica a regra no servidor. Em Authentication > Sign In / Providers > Email, defina **Minimum password length = 6** e **Password requirements = Lowercase, uppercase letters and digits**. Sem essa configuração, uma chamada direta à API do Supabase aceita senha que a interface recusaria.
 
 ### Limite de tentativas
 
@@ -36,7 +36,7 @@ O bloqueio customizado aplica-se ao endpoint da aplicação. O Supabase Auth man
 
 ## Recuperação de senha
 
-O frontend solicita o link por `resetPasswordForEmail` e apresenta resposta neutra, exista ou não conta para aquele e-mail. A senha só é atualizada na sessão aberta pelo link e deve seguir a mesma política do cadastro; ao concluir, a sessão é encerrada e o usuário entra novamente.
+O frontend solicita o link por `resetPasswordForEmail` e apresenta resposta neutra, exista ou não conta para aquele e-mail. A senha só é atualizada na sessão aberta pelo link e deve seguir a mesma política do cadastro; ao concluir, a sessão é encerrada e o usuário entra novamente. A configuração de Redirect URLs no painel do Supabase foi completada para os domínios do AprendeIA. A política de senha de 6 a 128 caracteres com pelo menos uma letra maiúscula, uma minúscula e um número está ativa e aplicada tanto no cadastro quanto na redefinição.
 
 ## Proxy e IP real
 
@@ -66,6 +66,5 @@ O valor precisa corresponder à infraestrutura usada. Uma rede inválida faz o l
 
 - `RATE_LIMIT_PEPPER` deve ser longo, aleatório e existir apenas no backend. Se não for informado, o sistema usa a chave secreta do Supabase como chave HMAC.
 - O frontend ainda precisa da chave **publicável** do Supabase; ela não é uma chave administrativa.
-- O limite do backend não substitui os limites nativos do Supabase. Para reduzir abuso do cadastro e recuperação de senha, ainda é recomendado configurar CAPTCHA e as opções de Auth do projeto.
-- A proteção contra senhas conhecidas em vazamentos está desligada no projeto Supabase e precisa ser ativada no painel quando disponível.
-- Antes de produção, confirme no painel Supabase: confirmação de e-mail ativa, política de senha compatível, proteção contra senhas vazadas se disponível e Redirect URLs restritos aos domínios do AprendeIA.
+- O limite do backend não substitui os limites nativos do Supabase. Para reduzir abuso do cadastro e recuperação de senha, o CAPTCHA (Turnstile) já está configurado e as opções de Auth do projeto estão ativas.
+- Antes de produção, confirme no painel Supabase: confirmação de e-mail ativa, política de senha compatível, proteção contra senhas vazadas se disponível e Redirect URLs restritos aos domínios do AprendeIA. Essas configurações foram validadas após a conclusão de RF-04.

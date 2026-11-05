@@ -14,6 +14,19 @@ A auditoria registra quando uma funcionalidade protegida é usada, por quem e co
 - HMAC da rede, sem armazenar o IP puro;
 - data do evento e prazo de expiração.
 
+## Eventos de negócio
+
+Além das ações técnicas por rota, o catálogo registra os eventos pedidos pelo projeto:
+
+- `LOGIN_SUCCESS` e `LOGIN_FAILED` para tentativas de autenticação;
+- `CREATE_USER` e `APPROVE_TEACHER` para criação e liberação de contas;
+- `CREATE_CLASS` e `ADD_STUDENT_TO_CLASS` para gestão de turmas;
+- `GENERATE_QUESTION` e `ANSWER_QUESTION` para atividades do banco de questões;
+- `EXPORT_REPORT` e `UPDATE_PROFILE` para relatórios e alteração do perfil;
+- `SEND_WEEKLY_SUMMARY` para o processamento do resumo semanal por disciplina.
+
+O resumo semanal identifica o ator como `service` e guarda somente a semana, a quantidade de professores notificados, falhas de entrega e resultado agregado. Nomes de estudantes, e-mails e conteúdo do resumo não entram nesse evento. A migration `20261006120000_profile_and_weekly_summary_audit.sql` atualiza a lista aceita pelo banco.
+
 No login sem sucesso, o e-mail é representado pelo mesmo HMAC usado no limite de tentativas. Senha, token, corpo, query string, resposta da IA e endereço IP puro não são gravados.
 
 ## Acesso e retenção
@@ -29,6 +42,7 @@ Os registros e as evidências detalhadas de aceite expiram em até 7 dias. A mig
 - `frontend/src/components/admin/AuditLogPanel.tsx` — filtros e visualização;
 - `supabase/migrations/20260920120000_access_audit_logs.sql` — tabela, índices e isolamento;
 - `backend/test_access_audit.py` — cobertura das rotas e das regras de privacidade.
+- `supabase/migrations/20261006120000_profile_and_weekly_summary_audit.sql` — novos eventos e versão 1.1 da política.
 
 ## Ordem de publicação
 

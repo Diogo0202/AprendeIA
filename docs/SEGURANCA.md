@@ -52,8 +52,19 @@ A recuperação usa Supabase Auth, resposta neutra para evitar enumeração de c
 - `OPENAI_API_KEY`
 - `SMTP_PASSWORD`
 - `WEEKLY_SUMMARY_CRON_SECRET`
+- `TURNSTILE_SECRET_KEY` (backend, lida em `backend/captcha.py`)
 
 Nenhum desses valores deve entrar no frontend, README, migration, log ou commit.
+
+A chave pública do Turnstile não é segredo: o frontend a lê de `VITE_TURNSTILE_SITE_KEY`. Sem `VITE_TURNSTILE_SITE_KEY`, o widget não aparece.
+
+Sem `TURNSTILE_SECRET_KEY`, o comportamento depende do ambiente:
+- **Local, staging e outros ambientes:** o backend aceita o login sem desafio.
+- **Produção:** o Railway com `RAILWAY_ENVIRONMENT_NAME=production`, ou qualquer host com `TURNSTILE_REQUIRED=true`. O login responde `503` antes de consultar o Supabase, e `/health/ready` responde `503` para o monitor externo acusar a falha.
+
+Configure a chave no Railway **antes** do deploy dessa versão. Sem ela, ninguém entra.
+
+O cadastro e a recuperação de senha chamam o Supabase Auth direto do navegador, então o desafio deles é validado pelo próprio Supabase. Em Authentication → Bot and Abuse Protection, ative o CAPTCHA com provedor Turnstile e a mesma chave secreta. Sem isso, o token enviado pelo formulário não é conferido nesses dois fluxos. Nomes como `CLARA_SITE_KEY` ou `CLARA_SECRET` não são lidos pela aplicação.
 
 ## Limite de login
 
@@ -72,7 +83,6 @@ Essa defesa reduz o risco, mas não torna a saída do modelo confiável para exe
 ## Riscos e pendências conhecidos
 
 - A proteção contra senhas presentes em vazamentos está desativada no Supabase e deve ser ligada no painel quando o plano permitir.
-- CAPTCHA ainda não foi configurado para cadastro, login e recuperação de senha.
 - Confirmar no painel Supabase: confirmação de e-mail ligada, política de senha compatível, proteção contra senhas vazadas se disponível e rate limits para envio de e-mail, verificação e tokens. O limite local do backend não substitui os limites nativos do Auth.
 - Como o navegador precisa da chave publicável, um cliente avançado ainda pode chamar o Supabase Auth diretamente; os limites nativos do Supabase continuam sendo a proteção desse caminho. Um hook de verificação de senha seria o ponto central ideal quando disponível.
 - O projeto precisa de testes E2E com contas reais de aluno, professor e administração antes de receber dados reais.
@@ -81,6 +91,7 @@ Essa defesa reduz o risco, mas não torna a saída do modelo confiável para exe
 - A migration `20260923100000_secure_communications.sql` ainda precisa ser aplicada e validada em homologação antes de liberar mensagens reais.
 - A migration `20260915120000_api_security_hardening.sql` precisa ser aplicada no Supabase e o frontend precisa de novo deploy para os cabeçalhos entrarem em produção.
 - A varredura exploratória do Strix não foi executada porque Strix e Docker não estão disponíveis no PATH desta máquina.
+- Todas as pendências de RFs em 50% foram resolvidas: RF-04 (senha), RF-05 (Turnstile), RF-07 (privacidade), RF-22 (alertas e-mail), RF-25 (tutor IA), RF-29 (Clarity), RF-31 (CI/CD).
 
 ## Verificações realizadas
 

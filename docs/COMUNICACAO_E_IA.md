@@ -63,7 +63,7 @@ Aluno e professor usam o mesmo componente `CommunicationCenter`. O menu usa `Nav
 ## Antes de produção
 
 1. aplicar a migration no Supabase de homologação;
-2. configurar `OPENAI_API_KEY` e `OPENAI_MODEL` somente no backend;
+2. configurar `OPENAI_API_KEY` e `OPENAI_MODEL` somente no backend - **já configurado no Railway**;
 3. testar com contas reais de aluno, professor da matéria, outro professor e administrador;
 4. confirmar que conversa alheia responde como não encontrada;
 5. validar retenção e política institucional para mensagens escolares;

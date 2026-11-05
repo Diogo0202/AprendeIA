@@ -7,11 +7,16 @@ ALLOWED_DIRECT_PAIRS = {
     ("student", "teacher"),
     ("teacher", "student"),
     ("teacher", "teacher"),
+    ("teacher", "admin"),
+    ("admin", "teacher"),
 }
 
 
 def can_start_direct_conversation(actor_role: str, recipient_role: str) -> bool:
-    """Aluno fala com professor; professor fala com aluno ou professor."""
+    """Aluno fala com professor; professor fala com aluno, professor ou administração.
+
+    Administração e aluno não têm conversa direta.
+    """
 
     return (actor_role, recipient_role) in ALLOWED_DIRECT_PAIRS
 

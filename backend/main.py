@@ -14,10 +14,10 @@ import ssl
 import time
 import uuid
 from collections import defaultdict
+from contextlib import asynccontextmanager
 from datetime import date, datetime, timedelta, timezone
 from email.message import EmailMessage
 from typing import Annotated, Any, Literal
-from zoneinfo import ZoneInfo
 
 from dotenv import load_dotenv
 from fastapi import Depends, FastAPI, Header, HTTPException, Query, Request, Response
@@ -44,7 +44,7 @@ from auth_security import (
     rate_limit_hash,
     rate_limit_state,
 )
-from captcha import CaptchaError, captcha_configured, verify_turnstile
+from captcha import CaptchaError, CaptchaUnavailable, captcha_configured, captcha_mode, captcha_required, verify_turnstile
 from communication_rules import can_start_direct_conversation, validate_message_body
 from difficulty_alerts import (
     build_immediate_email,
@@ -54,7 +54,6 @@ from difficulty_alerts import (
 )
 from gamification import (
     build_gamification_summary,
-    calculate_current_streak,
     can_feature_achievement,
 )
 from learning_engine import (
@@ -70,6 +69,11 @@ from teacher_dashboard import (
     difficulty_label,
     parse_content_import,
 )
+from admin_panel import register_admin_panel_routes
+from notification_preferences import email_enabled, register_notification_routes
+from privacy_requests import register_privacy_routes
+from account_lifecycle import PROFILE_FIELDS, check_access, register_lifecycle_routes
+from leaderboard import persistent_summary, register_leaderboard_routes
 
 # Carrega somente variáveis locais; o arquivo .env fica fora do Git.
 load_dotenv()
@@ -77,7 +81,14 @@ load_dotenv()
 # A URL permitida é configurável para evitar CORS aberto em produção.
 # A API não publica Swagger em produção: até a documentação revela nomes de
 # rotas e modelos que não precisam ficar disponíveis para qualquer visitante.
-app = FastAPI(title="aprendeIA API", version="0.3.0", docs_url=None, redoc_url=None, openapi_url=None)
+@asynccontextmanager
+async def lifespan(_app: FastAPI):
+    if captcha_required() and not captcha_configured():
+        raise RuntimeError("Verificação de segurança não configurada para produção.")
+    yield
+
+
+app = FastAPI(title="aprendeIA API", version="0.3.0", docs_url=None, redoc_url=None, openapi_url=None, lifespan=lifespan)
 app.add_middleware(
     CORSMiddleware,
     allow_origins=[os.getenv("FRONTEND_URL", "http://localhost:5173")],
@@ -290,9 +301,10 @@ class UserCreate(BaseModel):
 
 
 class PrivacyPolicyAccept(BaseModel):
-    """A pessoa declara a versão que leu; o backend define a hora do aceite."""
+    """A pessoa declara as versões que leu; o backend define a hora do aceite."""
 
-    policy_version: Literal["1.0"]
+    policy_version: Literal["1.6"]
+    terms_version: Literal["1.0"]
 
 
 class TeacherApproval(BaseModel):
@@ -334,12 +346,8 @@ class StudentProfilePersonalization(BaseModel):
     """Escolhas visuais fechadas para não aceitar CSS ou valores arbitrários."""
 
     avatar_key: Literal["orbit", "spark", "books", "prism", "trail"]
-    featured_badge_id: Literal[
-        "first_lesson",
-        "study_streak",
-        "ten_correct_answers",
-        "excellent_accuracy",
-    ] | None = None
+    # A existência e o desbloqueio são conferidos no catálogo persistido.
+    featured_badge_id: str | None = Field(default=None, max_length=64, pattern=r"^[a-z][a-z0-9_]*$")
     accent_theme: Literal["wine", "ocean", "forest", "amber"]
 
 
@@ -673,9 +681,19 @@ def reject_failed_login(db: Client, identity_state: RateLimitState, network_hash
 def authenticate_with_password(credentials: LoginRequest):
     """Usa um cliente separado para a sessão nunca trocar o papel da RPC."""
 
-    return database().auth.sign_in_with_password(
-        {"email": credentials.email, "password": credentials.password}
-    )
+    payload = {"email": credentials.email, "password": credentials.password}
+    if captcha_mode() == "supabase":
+        # Uma chave privilegiada pode dispensar CAPTCHA no Auth. Este cliente
+        # precisa da chave publicável e não recebe tokens já consumidos localmente.
+        client = create_client(
+            os.environ["SUPABASE_URL"],
+            os.environ["SUPABASE_PUBLISHABLE_KEY"].strip(),
+            options=SyncClientOptions(auto_refresh_token=False, persist_session=False),
+        )
+        payload["options"] = {"captcha_token": credentials.captcha_token.strip()}
+    else:
+        client = database()
+    return client.auth.sign_in_with_password(payload)
 
 
 def smtp_configured() -> bool:
@@ -685,36 +703,14 @@ def smtp_configured() -> bool:
     return all(os.getenv(name) for name in required)
 
 
-def send_smtp_email(recipient: str, subject: str, body: str) -> bool:
-    """Envia e-mail com TLS e devolve só se o servidor aceitou a mensagem."""
+def send_smtp_email(*, db: Client, teacher_id: str, subject_id: str) -> str:
+    """Envia pelo ledger RF22; o retorno não comprova recebimento."""
+    from email_delivery import deliver_immediate
 
-    if not smtp_configured():
-        return False
-    try:
-        port = int(os.getenv("SMTP_PORT", "465"))
-        if not 1 <= port <= 65535:
-            return False
-        message = EmailMessage()
-        message["From"] = os.environ["SMTP_FROM"]
-        message["To"] = recipient
-        message["Subject"] = subject
-        message.set_content(body)
-        context = ssl.create_default_context()
-        use_ssl = os.getenv("SMTP_USE_SSL", "true").lower() == "true"
-        # SSL direto atende provedores na porta 465; STARTTLS cobre o caso 587.
-        if use_ssl:
-            with smtplib.SMTP_SSL(os.environ["SMTP_HOST"], port, context=context, timeout=15) as server:
-                server.login(os.environ["SMTP_USERNAME"], os.environ["SMTP_PASSWORD"])
-                server.send_message(message)
-        else:
-            with smtplib.SMTP(os.environ["SMTP_HOST"], port, timeout=15) as server:
-                server.starttls(context=context)
-                server.login(os.environ["SMTP_USERNAME"], os.environ["SMTP_PASSWORD"])
-                server.send_message(message)
-        return True
-    except (OSError, ValueError, smtplib.SMTPException):
-        # Não registramos o destinatário nem a resposta do provedor para não vazar dados.
-        return False
+    return deliver_immediate(
+        db, teacher_id=teacher_id, subject_id=subject_id,
+        panel_url=os.getenv("EMAIL_PANEL_URL", ""),
+    )
 
 
 def require_weekly_summary_secret(x_cron_secret: Annotated[str | None, Header()] = None) -> None:
@@ -758,7 +754,7 @@ def authenticated_profile(
         auth_user = db.auth.get_user(token).user
         if not auth_user:
             raise ValueError("User not found")
-        rows = db.table("profiles").select("id,email,role,full_name,grade,goal,privacy_policy_version").eq("id", str(auth_user.id)).limit(1).execute().data
+        rows = db.table("profiles").select("id,email,role,full_name,grade,goal,privacy_policy_version,terms_of_use_version," + PROFILE_FIELDS).eq("id", str(auth_user.id)).limit(1).execute().data
         if not rows:
             raise ValueError("Profile not found")
         profile = rows[0]
@@ -767,8 +763,15 @@ def authenticated_profile(
             # validou JWT e cargo no banco; nada vem de cabeçalho inventado.
             request.state.audit_actor_id = profile["id"]
             request.state.audit_actor_role = profile["role"]
-        if require_privacy_consent and profile.get("privacy_policy_version") != "1.0":
-            raise HTTPException(status_code=428, detail="Aceite a Política de Privacidade para continuar.")
+        if require_privacy_consent and (
+            profile.get("privacy_policy_version") != "1.6" or profile.get("terms_of_use_version") != "1.0"
+        ):
+            raise HTTPException(
+                status_code=428,
+                detail="Aceite os Termos de Uso e a Política de Privacidade para continuar.",
+            )
+        if require_privacy_consent:
+            check_access(profile)
         return profile
     except HTTPException:
         raise
@@ -810,12 +813,19 @@ def require_role(*roles: str):
 # A contagem real acontece no PostgreSQL, então continua valendo se o Railway
 # iniciar mais de uma cópia do backend.
 API_RATE_LIMITS: dict[str, tuple[int, int]] = {
+    "leaderboard_read": (60, 15 * 60),
+    "leaderboard_preferences": (10, 15 * 60),
+    "account_lifecycle_write": (10, 15 * 60),
+    "account_lifecycle_read": (60, 15 * 60),
     "answer_question": (120, 15 * 60),
     "diagnostic_answer": (60, 60 * 60),
     "lesson_progress": (240, 60 * 60),
     "generate_question": (10, 60 * 60),
     "teacher_question_write": (60, 60 * 60),
     "profile_personalization": (30, 60 * 60),
+    "notification_preferences": (30, 60 * 60),
+    "admin_performance_read": (120, 60 * 60),
+    "admin_user_delete": (10, 60 * 60),
     "teacher_class_write": (60, 60 * 60),
     "teacher_content_write": (30, 60 * 60),
     "teacher_content_import": (10, 60 * 60),
@@ -826,6 +836,10 @@ API_RATE_LIMITS: dict[str, tuple[int, int]] = {
     "communication_write": (120, 60 * 60),
     "ai_communication": (20, 60 * 60),
     "privacy_accept": (5, 60 * 60),
+    "privacy_request_write": (10, 60 * 60),
+    "privacy_data_export": (2, 60 * 60),
+    "privacy_admin_read": (120, 60 * 60),
+    "privacy_request_resolve": (30, 60 * 60),
 }
 
 
@@ -869,7 +883,9 @@ def enforce_api_rate_limit(db: Client, user_id: str, action: str) -> None:
 
 # O alias deixa explícito que as rotas abaixo compartilham a mesma barreira.
 TeacherUser = Annotated[dict[str, Any], Depends(require_role("teacher"))]
-CommunicationUser = Annotated[dict[str, Any], Depends(require_role("student", "teacher"))]
+CommunicationUser = Annotated[dict[str, Any], Depends(require_role("student", "teacher", "admin"))]
+# O tutor de IA continua restrito a quem estuda ou ensina.
+AITutorUser = Annotated[dict[str, Any], Depends(require_role("student", "teacher"))]
 
 
 def openai_client() -> OpenAI:
@@ -1016,22 +1032,11 @@ def synchronize_difficulty_alert(
     if not should_send_immediately:
         return
 
-    # O e-mail é uma consequência do alerta. Se o SMTP cair, a professora ainda
-    # vê o caso no painel e o resumo semanal pode tentar novamente depois.
-    teacher_rows = db.table("profiles").select("full_name,email").eq("id", teacher_id).limit(1).execute().data
-    student_rows = db.table("profiles").select("full_name").eq("id", student_id).limit(1).execute().data
-    if not teacher_rows or not student_rows:
-        return
-    subject, body = build_immediate_email(
-        teacher_name=teacher_rows[0]["full_name"],
-        student_name=student_rows[0]["full_name"],
-        subject_name=subject_name,
-        topic=topic,
-        accuracy_percent=accuracy_percent,
-        attempts=attempts,
-    )
-    if send_smtp_email(teacher_rows[0]["email"], subject, body):
-        db.table("difficulty_alerts").update({"immediate_email_sent_at": now}).eq("student_id", student_id).eq("subject_id", subject_id).eq("topic", topic).execute()
+    # Falha externa não desfaz a tentativa ou o alerta do painel.
+    try:
+        send_smtp_email(db=db, teacher_id=teacher_id, subject_id=subject_id)
+    except Exception:
+        logger.warning("RF22: envio imediato pendente de revisão no ledger.")
 
 
 def serialize_question(row: dict[str, Any]) -> dict[str, Any]:
@@ -1185,7 +1190,9 @@ def login(credentials: LoginRequest, request: Request, response: Response):
 
     db = database()
     try:
-        verify_turnstile(credentials.captcha_token, client_network(request))
+        verify_turnstile(credentials.captcha_token, client_network(request), expected_action="login")
+    except CaptchaUnavailable as error:
+        raise HTTPException(status_code=503, detail=str(error)) from error
     except CaptchaError as error:
         raise HTTPException(status_code=400, detail=str(error)) from error
     identity_hash = rate_limit_hash("identity", credentials.email)
@@ -1261,12 +1268,16 @@ def readiness():
 
     if not supabase_configured():
         raise HTTPException(status_code=503, detail="Banco de dados não configurado.")
+    # O monitor externo acusa a produção que ficaria sem login por falta da chave.
+    if captcha_required() and not captcha_configured():
+        raise HTTPException(status_code=503, detail="Verificação de segurança não configurada.")
     try:
         # Esta consulta também confirma que a migration da jornada foi aplicada.
         database().table("diagnostic_sessions").select("id").limit(1).execute()
         database().table("access_audit_logs").select("id").limit(1).execute()
         database().table("conversations").select("id").limit(1).execute()
         database().table("privacy_policy_acceptances").select("id").limit(1).execute()
+        database().table("privacy_requests").select("id").limit(1).execute()
     except Exception as error:
         raise HTTPException(status_code=503, detail="Banco de dados ainda não está pronto.") from error
     return {
@@ -1287,6 +1298,7 @@ def health(_user: dict = Depends(current_user)):
         "ai_configured": bool(os.getenv("OPENAI_API_KEY")),
         "supabase_configured": supabase_configured(),
         "captcha_configured": captcha_configured(),
+        "captcha_required": captcha_required(),
     }
 
 
@@ -1302,11 +1314,23 @@ def accept_privacy_policy(
     enforce_api_rate_limit(db, user["id"], "privacy_accept")
     accepted_at = db.rpc(
         "record_privacy_policy_acceptance",
-        {"target_user_id": user["id"], "target_policy_version": payload.policy_version},
+        {
+            "target_user_id": user["id"],
+            "target_policy_version": payload.policy_version,
+            "target_terms_version": payload.terms_version,
+        },
     ).execute().data
     request.state.audit_resource_id = user["id"]
-    request.state.audit_metadata = {"policy_version": payload.policy_version}
-    return {"accepted": True, "policy_version": payload.policy_version, "accepted_at": accepted_at}
+    request.state.audit_metadata = {
+        "policy_version": payload.policy_version,
+        "terms_version": payload.terms_version,
+    }
+    return {
+        "accepted": True,
+        "policy_version": payload.policy_version,
+        "terms_version": payload.terms_version,
+        "accepted_at": accepted_at,
+    }
 
 
 @app.get("/communications/contacts")
@@ -1357,6 +1381,18 @@ def communication_contacts(user: CommunicationUser):
                     **profile,
                     "context": subject_names.get(assignment["subject_id"], "Disciplina"),
                 }
+    elif user["role"] == "admin":
+        # A administração conversa só com professores ativos, nunca com alunos.
+        teachers = (
+            db.table("profiles")
+            .select("id,full_name,role")
+            .eq("role", "teacher")
+            .eq("registration_status", "active")
+            .execute()
+            .data
+        )
+        for profile in teachers:
+            contacts[profile["id"]] = {**profile, "context": "Professor"}
     else:
         assignment = teacher_assignment(db, user["id"])
         enrollments = (
@@ -1393,6 +1429,17 @@ def communication_contacts(user: CommunicationUser):
         for profile in teachers:
             if profile["id"] != user["id"]:
                 contacts[profile["id"]] = {**profile, "context": "Professor"}
+
+        admins = (
+            db.table("profiles")
+            .select("id,full_name,role")
+            .eq("role", "admin")
+            .eq("registration_status", "active")
+            .execute()
+            .data
+        )
+        for profile in admins:
+            contacts[profile["id"]] = {**profile, "context": "Administração"}
 
     return sorted(contacts.values(), key=lambda item: item["full_name"].casefold())
 
@@ -1572,7 +1619,7 @@ def send_communication_message(
 
 
 @app.post("/communications/ai/messages", status_code=201)
-def send_ai_communication_message(payload: AICommunicationRequest, user: CommunicationUser):
+def send_ai_communication_message(payload: AICommunicationRequest, user: AITutorUser):
     """Mantem a conversa de IA separada das mensagens humanas e dos outros usuarios."""
 
     db = database()
@@ -1692,12 +1739,13 @@ def list_questions(subject: str | None = None, difficulty: str | None = None, us
 
 
 @app.post("/question-bank/generate")
-def generate_question(request: QuestionRequest, user: TeacherUser):
+def generate_question(http_request: Request, request: QuestionRequest, user: TeacherUser):
     """Gera com IA e persiste a nova questão quando existe banco configurado."""
 
     if not supabase_configured():
         question = generate_with_ai(request)
         question_bank.append(question)
+        http_request.state.audit_resource_id = question["id"]
         return question
     db = database()
     subjects = db.table("subjects").select("id").eq("name", request.subject).limit(1).execute().data
@@ -1717,7 +1765,7 @@ def generate_question(request: QuestionRequest, user: TeacherUser):
     }
     payload.pop("id", None); payload.pop("subject", None); payload.pop("skill", None)
     created = db.table("questions").insert(payload).execute().data[0]
-    request.state.audit_resource_id = created["id"]
+    http_request.state.audit_resource_id = created["id"]
     created["subjects"] = {"name": request.subject}
     return serialize_question(created)
 
@@ -2427,9 +2475,10 @@ def complete_required_exercise(
 
 
 @app.get("/student/gamification")
-def student_gamification(user: dict = Depends(require_role("student"))):
+def student_gamification(response: Response, user: dict = Depends(require_role("student"))):
     """Calcula a jornada usando apenas a atividade do estudante autenticado."""
 
+    response.headers["Cache-Control"] = "no-store"
     if not supabase_configured():
         return build_gamification_summary(
             completed_lessons=2,
@@ -2438,44 +2487,14 @@ def student_gamification(user: dict = Depends(require_role("student"))):
             active_days=4,
             current_streak=3,
         )
-    return build_student_gamification(database(), user["id"])
+    db = database()
+    enforce_api_rate_limit(db, user["id"], "leaderboard_read")
+    return build_student_gamification(db, user["id"])
 
 
 def build_student_gamification(db: Client, student_id: str) -> dict[str, object]:
     """Centraliza o cálculo usado pelo painel e pela validação da insígnia."""
-
-    completed_response = (
-        db.table("lesson_progress")
-        .select("lesson_id", count="exact")
-        .eq("student_id", student_id)
-        .eq("completed", True)
-        .execute()
-    )
-    attempts = (
-        db.table("question_attempts")
-        .select("correct")
-        .eq("student_id", student_id)
-        .limit(10000)
-        .execute()
-        .data
-    )
-    activity_rows = (
-        db.table("student_activity_days")
-        .select("activity_date")
-        .eq("student_id", student_id)
-        .order("activity_date", desc=True)
-        .limit(365)
-        .execute()
-        .data
-    )
-    activity_days = [date.fromisoformat(str(row["activity_date"])) for row in activity_rows]
-    return build_gamification_summary(
-        completed_lessons=completed_response.count or 0,
-        correct_answers=sum(1 for attempt in attempts if attempt["correct"]),
-        attempts=len(attempts),
-        active_days=len(activity_days),
-        current_streak=calculate_current_streak(activity_days, today=datetime.now(ZoneInfo("America/Sao_Paulo")).date()),
-    )
+    return persistent_summary(db, student_id)
 
 
 @app.put("/student/profile-personalization")
@@ -2927,6 +2946,7 @@ def list_access_audit_logs(
     role: Literal["student", "teacher", "admin", "service"] | None = Query(default=None),
     outcome: Literal["success", "denied", "error"] | None = Query(default=None),
     action: str | None = Query(default=None, min_length=3, max_length=100, pattern=r"^(?:[A-Z][A-Z0-9_]+|[a-z][a-z0-9_.]+)$"),
+    user_id: uuid.UUID | None = Query(default=None),
     limit: int = Query(default=100, ge=1, le=200),
     admin: dict = Depends(require_role("admin")),
 ):
@@ -2946,6 +2966,9 @@ def list_access_audit_logs(
         query = query.eq("outcome", outcome)
     if action:
         query = query.eq("action", action)
+    if user_id:
+        # Histórico de uma pessoa: o que ela fez, dentro da mesma retenção de 7 dias.
+        query = query.eq("user_id", str(user_id))
     events = query.order("created_at", desc=True).limit(limit).execute().data
 
     actor_ids = list({row.get("user_id") or row.get("actor_id") for row in events if row.get("user_id") or row.get("actor_id")})
@@ -3258,65 +3281,63 @@ def create_user(request: Request, payload: UserCreate, _admin: dict = Depends(re
 
 
 @app.post("/internal/weekly-difficulty-summary")
-def send_weekly_difficulty_summary(_secret: None = Depends(require_weekly_summary_secret)):
-    """Envia um resumo de alertas ativos, uma vez por semana e por disciplina."""
+def send_weekly_difficulty_summary(
+    request: Request,
+    _secret: None = Depends(require_weekly_summary_secret),
+):
+    """Processa a semana anterior antes de qualquer limpeza de retenção."""
+    from email_delivery import run_weekly_summary
 
     if not supabase_configured():
         raise HTTPException(status_code=503, detail="Supabase ainda não está configurado no backend.")
-    if not smtp_configured():
-        raise HTTPException(status_code=503, detail="SMTP ainda não está configurado no backend.")
-    db = database()
-    week_start = current_week_start().isoformat()
-    existing = db.table("weekly_summary_runs").select("status").eq("week_start", week_start).limit(1).execute().data
-    if existing and existing[0]["status"] == "sent":
-        return {"status": "already_sent", "teachers_notified": 0}
-    if existing and existing[0]["status"] == "processing":
-        raise HTTPException(status_code=409, detail="Resumo semanal já está em processamento.")
-    if existing:
-        db.table("weekly_summary_runs").update({"status": "processing", "sent_at": None}).eq("week_start", week_start).execute()
-    else:
-        db.table("weekly_summary_runs").insert({"week_start": week_start, "status": "processing"}).execute()
+    request.state.audit_actor_role = "service"
+    try:
+        result = run_weekly_summary(database(), panel_url=os.getenv("EMAIL_PANEL_URL", ""))
+    except ValueError as error:
+        raise HTTPException(status_code=503, detail="Configuração RF22 inválida no backend.") from error
+    request.state.audit_metadata = result
+    return result
 
-    alerts = db.table("difficulty_alerts").select("teacher_id,student_id,subject_id,topic,accuracy,attempts").eq("status", "active").limit(1000).execute().data
-    if not alerts:
-        db.table("weekly_summary_runs").update({"status": "sent", "sent_at": datetime.now(timezone.utc).isoformat()}).eq("week_start", week_start).execute()
-        return {"status": "sent", "teachers_notified": 0}
-    teacher_ids = list({alert["teacher_id"] for alert in alerts})
-    student_ids = list({alert["student_id"] for alert in alerts})
-    subject_ids = list({alert["subject_id"] for alert in alerts})
-    teachers = db.table("profiles").select("id,full_name,email").in_("id", teacher_ids).execute().data
-    students = db.table("profiles").select("id,full_name").in_("id", student_ids).execute().data
-    subjects = db.table("subjects").select("id,name").in_("id", subject_ids).execute().data
-    teachers_by_id = {teacher["id"]: teacher for teacher in teachers}
-    students_by_id = {student["id"]: student for student in students}
-    subjects_by_id = {subject["id"]: subject for subject in subjects}
-    grouped: dict[tuple[str, str], list[dict[str, object]]] = defaultdict(list)
-    for alert in alerts:
-        grouped[(alert["teacher_id"], alert["subject_id"])].append(
-            {
-                "student_name": students_by_id.get(alert["student_id"], {}).get("full_name", "Estudante"),
-                "topic": alert["topic"],
-                "accuracy_percent": float(alert["accuracy"]),
-                "attempts": alert["attempts"],
-            }
-        )
-    notified = 0
-    failures = 0
-    for (teacher_id, subject_id), grouped_alerts in grouped.items():
-        teacher = teachers_by_id.get(teacher_id)
-        subject_name = subjects_by_id.get(subject_id, {}).get("name")
-        if not teacher or not subject_name:
-            failures += 1
-            continue
-        subject, body = build_weekly_email(
-            teacher_name=teacher["full_name"],
-            subject_name=subject_name,
-            alerts=grouped_alerts,
-        )
-        if send_smtp_email(teacher["email"], subject, body):
-            notified += 1
-        else:
-            failures += 1
-    status = "sent" if failures == 0 else "failed"
-    db.table("weekly_summary_runs").update({"status": status, "sent_at": datetime.now(timezone.utc).isoformat() if status == "sent" else None}).eq("week_start", week_start).execute()
-    return {"status": status, "teachers_notified": notified, "failed_deliveries": failures}
+
+register_admin_panel_routes(
+    app,
+    database=database,
+    admin_dependency=require_role("admin"),
+    enforce_limit=enforce_api_rate_limit,
+    identity_hash=lambda email: rate_limit_hash("identity", normalize_login_email(email)),
+)
+
+# Direitos do titular continuam disponíveis mesmo antes do aceite da política.
+register_notification_routes(
+    app,
+    database=database,
+    teacher_dependency=require_role("teacher"),
+    enforce_limit=enforce_api_rate_limit,
+)
+
+register_privacy_routes(
+    app,
+    database=database,
+    user_dependency=current_user_pending_privacy,
+    admin_dependency=require_role("admin"),
+    enforce_limit=enforce_api_rate_limit,
+    identity_hash=lambda email: rate_limit_hash("identity", normalize_login_email(email)),
+)
+
+register_lifecycle_routes(
+    app,
+    database=database,
+    user_dependency=current_user_pending_privacy,
+    admin_dependency=require_role("admin"),
+    enforce_limit=enforce_api_rate_limit,
+    retention_secret=lambda: os.getenv("ACCOUNT_RETENTION_CRON_SECRET"),
+    retention_enabled=lambda: os.getenv("ACCOUNT_RETENTION_ENABLED", "false").lower() == "true",
+)
+
+register_leaderboard_routes(
+    app,
+    database=database,
+    student_dependency=require_role("student"),
+    teacher_dependency=require_role("teacher"),
+    enforce_limit=enforce_api_rate_limit,
+)

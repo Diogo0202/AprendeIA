@@ -11,9 +11,25 @@ from typing import Any
 # O mapa explícito evita nomes ambíguos e permite provar em teste que cada
 # funcionalidade protegida ganhou um evento de auditoria.
 AUDIT_ACTIONS: dict[tuple[str, str], str] = {
+    ("GET", "/student/leaderboard"): "student.leaderboard.view",
+    ("PUT", "/student/leaderboard-preferences"): "student.leaderboard.preferences",
+    ("GET", "/teacher/classes/{class_id}/leaderboard"): "teacher.leaderboard.view",
+    ("GET", "/account/status"): "account.status.view",
+    ("PUT", "/account/age-band"): "account.age.declare",
+    ("POST", "/account/admission"): "account.admission.request",
+    ("GET", "/admin/account-admissions"): "admin.admissions.list",
+    ("POST", "/admin/account-admissions/{request_id}/review"): "admin.admissions.review",
+    ("POST", "/internal/account-retention/preview"): "account.retention.preview",
+    ("POST", "/internal/account-retention/execute"): "account.retention.execute",
     ("POST", "/auth/login"): "LOGIN_SUCCESS",
     ("GET", "/health"): "system.health.view",
     ("POST", "/privacy/accept"): "privacy.policy.accept",
+    ("GET", "/privacy/requests"): "privacy.requests.list",
+    ("POST", "/privacy/requests"): "privacy.requests.create",
+    ("POST", "/privacy/requests/{request_id}/cancel"): "privacy.requests.cancel",
+    ("GET", "/privacy/requests/{request_id}/export"): "privacy.requests.export",
+    ("GET", "/admin/privacy-requests"): "privacy.requests.admin.list",
+    ("POST", "/admin/privacy-requests/{request_id}/resolve"): "privacy.requests.resolve",
     ("GET", "/communications/contacts"): "communications.contacts.list",
     ("GET", "/communications/conversations"): "communications.conversations.list",
     ("POST", "/communications/conversations"): "communications.conversations.create",
@@ -33,11 +49,13 @@ AUDIT_ACTIONS: dict[tuple[str, str], str] = {
     ("PUT", "/student/lessons/{lesson_id}/progress"): "student.lesson.progress",
     ("POST", "/student/lessons/{lesson_id}/required-exercises/{question_id}/complete"): "student.lesson.exercise.complete",
     ("GET", "/student/gamification"): "student.gamification.view",
-    ("PUT", "/student/profile-personalization"): "student.profile.personalize",
+    ("PUT", "/student/profile-personalization"): "UPDATE_PROFILE",
     ("GET", "/teacher/questions"): "teacher.questions.list",
     ("PATCH", "/teacher/questions/{question_id}"): "teacher.questions.review",
     ("GET", "/teacher/students"): "teacher.students.list",
     ("GET", "/teacher/difficulty-alerts"): "teacher.alerts.list",
+    ("GET", "/teacher/notification-preferences"): "teacher.notifications.view",
+    ("PUT", "/teacher/notification-preferences"): "UPDATE_NOTIFICATION_PREFERENCES",
     ("GET", "/teacher/overview"): "teacher.overview.view",
     ("GET", "/teacher/classes"): "teacher.classes.list",
     ("POST", "/teacher/classes"): "CREATE_CLASS",
@@ -65,7 +83,11 @@ AUDIT_ACTIONS: dict[tuple[str, str], str] = {
     ("GET", "/admin/teacher-requests"): "admin.teacher_requests.list",
     ("POST", "/admin/teacher-requests/{user_id}/approve"): "APPROVE_TEACHER",
     ("GET", "/admin/audit-logs"): "admin.audit_logs.list",
-    ("POST", "/internal/weekly-difficulty-summary"): "system.weekly_summary.send",
+    ("GET", "/admin/teachers"): "admin.teachers.list",
+    ("GET", "/admin/classes"): "admin.classes.list",
+    ("GET", "/admin/performance"): "admin.performance.view",
+    ("POST", "/admin/users/{user_id}/delete"): "DELETE_USER",
+    ("POST", "/internal/weekly-difficulty-summary"): "SEND_WEEKLY_SUMMARY",
 }
 
 
@@ -104,10 +126,27 @@ def build_access_audit_record(
     """Monta a linha com uma lista fechada de campos permitidos."""
 
     safe_role = actor_role if actor_role in {"student", "teacher", "admin", "service"} else None
+    # A tarefa semanal só registra totais e semana, nunca nomes nem o corpo do e-mail.
     safe_metadata = {
         key: value
         for key, value in (metadata or {}).items()
-        if key in {"class_id", "student_id", "policy_version", "policy_hash"}
+        if key in {
+            "class_id",
+            "student_id",
+            "policy_version",
+            "terms_version",
+            "policy_hash",
+            "week_start",
+            "teachers_notified",
+            "teachers_skipped",
+            "failed_deliveries",
+            "delivery_status",
+            "email_difficulty_alerts",
+            "email_weekly_summary",
+            # Exclusão administrativa: cargo removido e motivo escrito pela administração.
+            "deleted_role",
+            "reason",
+        }
         and isinstance(value, (str, int, float, bool, type(None)))
     }
     timestamp = datetime.now(timezone.utc).isoformat()

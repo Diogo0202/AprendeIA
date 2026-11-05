@@ -1,0 +1,11 @@
+{
+  "name": "aprendeia-database-validation",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "test": "node privacy-database.mjs && node lifecycle-database.mjs && node admin-database.mjs && node gamification-database.mjs && node extended-privacy-database.mjs"
+  },
+  "devDependencies": {
+    "@electric-sql/pglite": "0.5.14"
+  }
+}

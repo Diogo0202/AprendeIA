@@ -2,8 +2,14 @@ import { FormEvent, useEffect, useMemo, useState } from 'react';
 import { apiError, apiFetch } from '../lib/api';
 import { isSupabaseConfigured } from '../lib/supabase';
 
-type CommunicationRole = 'student' | 'teacher';
+type CommunicationRole = 'student' | 'teacher' | 'admin';
 type CommunicationMode = 'direct' | 'ai';
+
+const contactRoleLabels: Record<CommunicationRole, string> = {
+  student: 'Estudante',
+  teacher: 'Professor',
+  admin: 'Administração',
+};
 
 type Contact = {
   id: string;
@@ -48,6 +54,9 @@ const demoContacts: Record<CommunicationRole, Contact[]> = {
       role: 'teacher',
       context: 'Professor',
     },
+  ],
+  admin: [
+    { id: 'demo-teacher', full_name: 'Prof. Carlos Lima', role: 'teacher', context: 'Professor' },
   ],
 };
 
@@ -271,17 +280,20 @@ export function CommunicationCenter({ role, requestedMode }: CommunicationCenter
           <p className="eyebrow">CONVERSAS</p>
           <h2 id="communication-title">Fale com seguranca</h2>
         </div>
-        <button
-          type="button"
-          className={`communication-contact ai ${currentMode === 'ai' ? 'active' : ''}`}
-          onClick={() =>
-            setSelectedId(conversations.find((item) => item.kind === 'ai')?.id ?? 'ai-new')
-          }
-        >
-          <span>IA</span>
-          <strong>Tutor IA</strong>
-          <small>Apoio educacional</small>
-        </button>
+        {/* O tutor de IA é só para quem estuda ou ensina; a API recusa a administração. */}
+        {role !== 'admin' && (
+          <button
+            type="button"
+            className={`communication-contact ai ${currentMode === 'ai' ? 'active' : ''}`}
+            onClick={() =>
+              setSelectedId(conversations.find((item) => item.kind === 'ai')?.id ?? 'ai-new')
+            }
+          >
+            <span>IA</span>
+            <strong>Tutor IA</strong>
+            <small>Apoio educacional</small>
+          </button>
+        )}
         <div className="communication-contact-list">
           {contacts.map((contact) => (
             <button
@@ -294,7 +306,7 @@ export function CommunicationCenter({ role, requestedMode }: CommunicationCenter
               <span>{contact.full_name.slice(0, 1).toLocaleUpperCase('pt-BR')}</span>
               <strong>{contact.full_name}</strong>
               <small>
-                {contact.role === 'teacher' ? 'Professor' : 'Estudante'} · {contact.context}
+                {contactRoleLabels[contact.role] ?? 'Contato'} · {contact.context}
               </small>
             </button>
           ))}

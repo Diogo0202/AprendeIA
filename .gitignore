@@ -11,3 +11,10 @@ frontend/dist/
 frontend/*.tsbuildinfo
 frontend/test-results/
 frontend/playwright-report/
+frontend/accessibility-results.json
+
+# Mapas de memória ficam separados do código e não devem ser publicados.
+**/graphify-out/
+
+# Banco PostgreSQL isolado dos testes, sem entrar no runtime da aplicação.
+scripts/validation/node_modules/

@@ -1,9 +1,24 @@
-import { CSSProperties, FormEvent, useEffect, useState } from 'react';
+import { CSSProperties, FormEvent, useEffect, useRef, useState } from 'react';
 import { AdminCatalog, type AdminSubject } from './components/admin/AdminCatalog';
+import {
+  AdminPerformance,
+  AdminTeachersClasses,
+  AdminUsers,
+  type AdminUser,
+} from './components/admin/AdminPanels';
+import { AccountLifecyclePanel } from './components/AccountLifecyclePanel';
+import { AdminAdmissionPanel } from './components/AdminAdmissionPanel';
 import { AuditLogPanel } from './components/admin/AuditLogPanel';
 import FallbackAvatar, { type AvatarKey } from './components/FallbackAvatar';
 import { CommunicationCenter } from './components/CommunicationCenter';
+import { NotificationPreferences } from './components/NotificationPreferences';
+import { AdminPrivacyRequests, PrivacyRequests } from './components/PrivacyRequests';
 import { NavigationDock } from './components/NavigationDock';
+import {
+  LegalDocuments,
+  TERMS_OF_USE_VERSION,
+  TermsOfUseAccess,
+} from './components/LegalDocuments';
 import {
   PrivacyConsentCheckbox,
   PrivacyPolicyAccess,
@@ -11,9 +26,15 @@ import {
 } from './components/PrivacyPolicyAccess';
 import { DiagnosticAssessment } from './components/student/DiagnosticAssessment';
 import { LessonReader } from './components/student/LessonReader';
+import { Leaderboard } from './components/student/Leaderboard';
+import {
+  GamificationAchievements,
+  type GamificationAchievement,
+} from './components/student/GamificationAchievements';
 import { QuestionStudio } from './components/teacher/QuestionStudio';
 import { TurnstileWidget } from './components/TurnstileWidget';
 import { apiError, apiFetch } from './lib/api';
+import { clearAuthCallbackUrl } from './lib/recovery';
 import { apiUrl, isSupabaseConfigured, supabase } from './lib/supabase';
 import type { DiagnosticState, LearningRecommendations, StudentSubject } from './types/learning';
 
@@ -82,7 +103,11 @@ function applyAccentTheme(theme: AccentTheme) {
 
 function applyInterfaceTheme(theme: 'light' | 'dark') {
   document.documentElement.dataset.theme = theme;
-  window.localStorage.setItem('aprendeia-interface-theme', theme);
+  try {
+    window.localStorage.setItem('aprendeia-interface-theme', theme);
+  } catch {
+    /* O tema funciona mesmo sem persistência. */
+  }
 }
 
 // Dados de demonstração permitem apresentar o TCC sem serviços externos.
@@ -161,6 +186,9 @@ type GamificationSummary = {
   active_days: number;
   current_streak: number;
   achievements: Achievement[];
+  weekly_xp?: number;
+  bonus_xp?: number;
+  catalog?: GamificationAchievement[];
 };
 
 // Estes dados só aparecem sem Supabase para a apresentação não esconder a jornada.
@@ -405,6 +433,7 @@ export default function App() {
   const [practiceSubject, setPracticeSubject] = useState('Matemática');
   const [authMessage, setAuthMessage] = useState('');
   const [authLoading, setAuthLoading] = useState(isSupabaseConfigured);
+  const recoveryActive = useRef(false);
   const enter = (role: Role) => setView(role);
 
   useEffect(() => applyAccentTheme(profile.accentTheme), [profile.accentTheme]);
@@ -416,20 +445,25 @@ export default function App() {
       return;
     }
     supabase.auth.getSession().then(({ data }) => {
+      if (recoveryActive.current) return;
       if (data.session?.user.id) void loadProfile(data.session.user.id);
       else setAuthLoading(false);
     });
     const { data } = supabase.auth.onAuthStateChange((event, session) => {
       if (event === 'PASSWORD_RECOVERY') {
+        recoveryActive.current = true;
+        clearAuthCallbackUrl();
         setView('reset-password');
         setAuthLoading(false);
         return;
       }
       if (event === 'SIGNED_OUT') {
+        recoveryActive.current = false;
         setView('login');
         setAuthLoading(false);
       }
-      if (event === 'SIGNED_IN' && session?.user.id) void loadProfile(session.user.id);
+      if (event === 'SIGNED_IN' && session?.user.id && !recoveryActive.current)
+        void loadProfile(session.user.id);
     });
     return () => data.subscription.unsubscribe();
   }, []);
@@ -441,7 +475,7 @@ export default function App() {
     const { data, error } = await supabase
       .from('profiles')
       .select(
-        'id,email,full_name,role,grade,goal,registration_status,requested_subject,avatar_key,featured_badge_id,accent_theme,profile_setup_complete,privacy_policy_version',
+        'id,email,full_name,role,grade,goal,registration_status,requested_subject,avatar_key,featured_badge_id,accent_theme,profile_setup_complete,privacy_policy_version,terms_of_use_version',
       )
       .eq('id', userId)
       .single();
@@ -471,7 +505,8 @@ export default function App() {
       profileSetupComplete: Boolean(data.profile_setup_complete),
     });
     setView(
-      data.privacy_policy_version !== PRIVACY_POLICY_VERSION
+      data.privacy_policy_version !== PRIVACY_POLICY_VERSION ||
+        data.terms_of_use_version !== TERMS_OF_USE_VERSION
         ? 'privacy-consent'
         : data.registration_status === 'pending_teacher'
           ? 'teacher-pending'
@@ -547,9 +582,13 @@ export default function App() {
     setAuthMessage('');
     setAuthLoading(true);
     const requestedRole = String(data.get('role') || 'student') as SignupRole;
-    const privacyPolicyAccepted = data.get('privacy_policy_accepted') === 'true';
-    if (!privacyPolicyAccepted) {
-      setAuthMessage('Para criar a conta, leia e aceite a Política de Privacidade.');
+    const consentsAccepted =
+      data.get('privacy_policy_accepted') === 'true' &&
+      data.get('terms_of_use_accepted') === 'true';
+    if (!consentsAccepted) {
+      setAuthMessage(
+        'Para criar a conta, leia e aceite os Termos de Uso e a Política de Privacidade.',
+      );
       setAuthLoading(false);
       return;
     }
@@ -594,6 +633,8 @@ export default function App() {
           requested_subject: requestedRole === 'teacher' ? requestedSubject : undefined,
           privacy_policy_accepted: true,
           privacy_policy_version: PRIVACY_POLICY_VERSION,
+          terms_of_use_accepted: true,
+          terms_of_use_version: TERMS_OF_USE_VERSION,
           account_origin: 'self_service',
         },
       },
@@ -629,14 +670,23 @@ export default function App() {
   async function handleExistingPrivacyConsent(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     const form = event.currentTarget;
-    if (new FormData(form).get('privacy_policy_accepted') !== 'true') {
-      setAuthMessage('Marque a caixa para confirmar que leu e aceita a política.');
+    const formData = new FormData(form);
+    if (
+      formData.get('privacy_policy_accepted') !== 'true' ||
+      formData.get('terms_of_use_accepted') !== 'true'
+    ) {
+      setAuthMessage(
+        'Marque as duas caixas para confirmar que leu e aceita os termos e a política.',
+      );
       return;
     }
     setAuthLoading(true);
     const response = await apiFetch('/privacy/accept', {
       method: 'POST',
-      body: JSON.stringify({ policy_version: PRIVACY_POLICY_VERSION }),
+      body: JSON.stringify({
+        policy_version: PRIVACY_POLICY_VERSION,
+        terms_version: TERMS_OF_USE_VERSION,
+      }),
     });
     if (!response.ok) {
       setAuthMessage(
@@ -708,19 +758,28 @@ export default function App() {
   };
   if (view === 'privacy-consent')
     return (
-      <main className="page-shell">
+      <main id="main-content" tabIndex={-1} className="page-shell">
         <section className="auth-card privacy-consent-page">
           <Brand />
           <p className="eyebrow">ANTES DE CONTINUAR</p>
-          <h1>Leia e aceite a política</h1>
+          <h1>Leia e aceite os termos e a política</h1>
           <p className="subtitle">
             Precisamos do seu aceite para liberar o uso da plataforma. O registro fica associado à
             sua conta.
           </p>
-          <PrivacyPolicyAccess label="Ler a Política de Privacidade" />
+          <div className="privacy-consent-link">
+            <TermsOfUseAccess label="Ler os Termos de Uso" />
+            <PrivacyPolicyAccess label="Ler a Política de Privacidade" />
+          </div>
+          {/* O titular pode abrir pedidos antes de aceitar a versão vigente. */}
+          <PrivacyRequests />
           <form className="auth-form" onSubmit={handleExistingPrivacyConsent}>
             <PrivacyConsentCheckbox
-              label={`Li e concordo com a Política de Privacidade do AprendeIA, versão ${PRIVACY_POLICY_VERSION}.`}
+              name="terms_of_use_accepted"
+              label={`Li e concordo com os Termos de Uso do AprendeIA, versão ${TERMS_OF_USE_VERSION}.`}
+            />
+            <PrivacyConsentCheckbox
+              label={`Li e estou ciente da Política de Privacidade do AprendeIA, versão ${PRIVACY_POLICY_VERSION}.`}
             />
             {authMessage && (
               <p className="form-message" role="alert">
@@ -739,7 +798,7 @@ export default function App() {
     );
   if (authLoading && view === 'login')
     return (
-      <main className="page-shell">
+      <main id="main-content" tabIndex={-1} className="page-shell">
         <section className="auth-card">
           <Brand />
           <p className="subtitle">Carregando sua sessão...</p>
@@ -748,16 +807,18 @@ export default function App() {
     );
   if (view === 'student')
     return (
-      <StudentProfile
-        profile={profile}
-        onProfileChange={setProfile}
-        onLogout={logout}
-        onChangePassword={() => setView('forgot-password')}
-        onPractice={(subject = 'Matemática') => {
-          setPracticeSubject(subject);
-          setView('practice');
-        }}
-      />
+      <AccountLifecyclePanel key={profile.id} userId={profile.id || ''} role={profile.role}>
+        <StudentProfile
+          profile={profile}
+          onProfileChange={setProfile}
+          onLogout={logout}
+          onChangePassword={() => setView('forgot-password')}
+          onPractice={(subject = 'Matemática') => {
+            setPracticeSubject(subject);
+            setView('practice');
+          }}
+        />
+      </AccountLifecyclePanel>
     );
   if (view === 'practice')
     if (profile.role !== 'student') return <AccessDenied onLogout={logout} />;
@@ -771,7 +832,9 @@ export default function App() {
     );
   if (view === 'teacher')
     return profile.role === 'teacher' ? (
-      <TeacherProfile onLogout={logout} />
+      <AccountLifecyclePanel key={profile.id} userId={profile.id || ''} role={profile.role}>
+        <TeacherProfile onLogout={logout} />
+      </AccountLifecyclePanel>
     ) : (
       <AccessDenied onLogout={logout} />
     );
@@ -788,7 +851,7 @@ export default function App() {
       <AccessDenied onLogout={logout} />
     );
   return (
-    <main className="page-shell">
+    <main id="main-content" tabIndex={-1} className="page-shell">
       <section className="auth-card">
         <Brand />
         {view === 'login' ? (
@@ -831,7 +894,7 @@ export default function App() {
 /** Evita que uma navegação manipulada no cliente revele a área de outro cargo. */
 function AccessDenied({ onLogout }: { onLogout: () => void }) {
   return (
-    <main className="profile-page">
+    <main id="main-content" tabIndex={-1} className="profile-page">
       <Header area="ACESSO RESTRITO" onLogout={onLogout} />
       <section className="profile-content narrow">
         <p className="eyebrow">PERMISSÃO NECESSÁRIA</p>
@@ -847,7 +910,7 @@ function AccessDenied({ onLogout }: { onLogout: () => void }) {
 /** Explica o próximo passo sem liberar ferramentas docentes antes da aprovação. */
 function TeacherPending({ profile, onLogout }: { profile: UserProfile; onLogout: () => void }) {
   return (
-    <main className="profile-page">
+    <main id="main-content" tabIndex={-1} className="profile-page">
       <Header area="CADASTRO DE PROFESSOR" onLogout={onLogout} />
       <section className="profile-content narrow pending-teacher-page">
         <span className="pending-seal" aria-hidden="true">
@@ -890,9 +953,13 @@ function Brand() {
 
 /** Cabeçalho comum que identifica a área atual e oferece saída explícita. */
 function Header({ onLogout, area }: { onLogout: () => void; area: string }) {
-  const [theme, setTheme] = useState<'light' | 'dark'>(() =>
-    window.localStorage.getItem('aprendeia-interface-theme') === 'dark' ? 'dark' : 'light',
-  );
+  const [theme, setTheme] = useState<'light' | 'dark'>(() => {
+    try {
+      return window.localStorage.getItem('aprendeia-interface-theme') === 'dark' ? 'dark' : 'light';
+    } catch {
+      return 'light';
+    }
+  });
 
   useEffect(() => applyInterfaceTheme(theme), [theme]);
 
@@ -901,6 +968,8 @@ function Header({ onLogout, area }: { onLogout: () => void; area: string }) {
       <Brand />
       <span className="area-name">{area}</span>
       <PrivacyPolicyAccess label="Privacidade" />
+      {/* O acesso comum inclui contas docentes ainda aguardando aprovação. */}
+      <PrivacyRequests />
       <button
         className="theme-toggle"
         type="button"
@@ -1103,8 +1172,13 @@ function Signup({
             Sua senha fica protegida pelo Supabase e não é salva no banco do AprendeIA.
           </p>
         )}
-        <PrivacyConsentCheckbox label="Li e concordo com a Política de Privacidade do AprendeIA." />
+        <PrivacyConsentCheckbox
+          name="terms_of_use_accepted"
+          label="Li e concordo com os Termos de Uso do AprendeIA."
+        />
+        <PrivacyConsentCheckbox label="Li e estou ciente da Política de Privacidade do AprendeIA." />
         <div className="privacy-consent-link">
+          <TermsOfUseAccess label="Ler os Termos de Uso" />
           <PrivacyPolicyAccess label="Ler a Política de Privacidade" />
         </div>
         <TurnstileWidget action="signup" />
@@ -1365,7 +1439,7 @@ function StudentProfile({
 
   if (isEditingProfile) {
     return (
-      <main className="profile-page">
+      <main id="main-content" tabIndex={-1} className="profile-page">
         <Header area="PERSONALIZAR PERFIL" onLogout={onLogout} />
         <ProfileSetup
           profile={profile}
@@ -1386,7 +1460,7 @@ function StudentProfile({
 
   if (diagnostic?.status === 'open') {
     return (
-      <main className="profile-page">
+      <main id="main-content" tabIndex={-1} className="profile-page">
         <Header area="AVALIAÇÃO DIAGNÓSTICA" onLogout={onLogout} />
         <DiagnosticAssessment
           diagnostic={diagnostic}
@@ -1405,7 +1479,7 @@ function StudentProfile({
   }
 
   return (
-    <main className="profile-page">
+    <main id="main-content" tabIndex={-1} className="profile-page">
       <Header area="ÁREA DO ESTUDANTE" onLogout={onLogout} />
       <div className="student-app-shell">
         <aside className="student-sidebar" aria-label="Menu do estudante">
@@ -1434,6 +1508,15 @@ function StudentProfile({
               },
               { id: 'exercises', label: 'Exercícios', glyph: 'EX', onSelect: () => onPractice() },
               {
+                id: 'ranking',
+                label: 'Ranking e conquistas',
+                glyph: 'XP',
+                onSelect: () =>
+                  document
+                    .getElementById('student-ranking')
+                    ?.scrollIntoView({ behavior: 'smooth' }),
+              },
+              {
                 id: 'assistant',
                 label: 'Perguntar à IA',
                 glyph: 'IA',
@@ -1447,13 +1530,20 @@ function StudentProfile({
                 onSelect: () =>
                   document.getElementById('student-report')?.scrollIntoView({ behavior: 'smooth' }),
               },
+              {
+                id: 'legal',
+                label: 'Termos e privacidade',
+                glyph: 'TP',
+                onSelect: () =>
+                  document.getElementById('student-legal')?.scrollIntoView({ behavior: 'smooth' }),
+              },
             ]}
           />
           <div className="student-sidebar-account">
             <button type="button" onClick={onChangePassword}>
               Alterar senha
             </button>
-            <a href="#student-terms">Termos e política</a>
+            <a href="#student-legal">Termos e política</a>
             <a href="#student-certificates">Certificados</a>
           </div>
         </aside>
@@ -1479,25 +1569,25 @@ function StudentProfile({
                   </span>
                 )}
               </div>
-              <section className="achievement-shelf" aria-labelledby="achievements-title">
-                <h2 id="achievements-title">Conquistas</h2>
-                {gamification ? (
-                  <ul className="achievement-list">
-                    {gamification.achievements.map((achievement) => (
-                      <li
-                        className="achievement-chip"
-                        key={achievement.id}
-                        title={achievement.description}
-                      >
-                        <span aria-hidden="true">{achievement.icon}</span>
-                        <span>{achievement.title}</span>
-                      </li>
-                    ))}
-                  </ul>
-                ) : (
-                  <p className="achievement-empty">Suas conquistas aparecerão por aqui.</p>
-                )}
-              </section>
+              {gamification ? (
+                <GamificationAchievements
+                  data={{
+                    points: gamification.points,
+                    weekly_xp: gamification.weekly_xp ?? 0,
+                    bonus_xp: gamification.bonus_xp ?? 0,
+                    catalog: gamification.catalog,
+                    achievements: gamification.achievements.map((item) => ({
+                      bonus_xp: 0,
+                      progress: 1,
+                      target: 1,
+                      ...item,
+                      unlocked: true,
+                    })),
+                  }}
+                />
+              ) : (
+                <p className="achievement-empty">Preparando suas conquistas...</p>
+              )}
             </div>
             <div className="student-intro">
               <p className="eyebrow">MINHA JORNADA</p>
@@ -1545,12 +1635,18 @@ function StudentProfile({
                   <p>
                     <strong>{gamification.points} XP</strong> de {gamification.next_level_points} XP
                   </p>
-                  <small>Continue estudando para subir de nível.</small>
+                  <small>
+                    {gamification.weekly_xp ?? 0} XP nesta semana. Continue estudando para subir de
+                    nível.
+                  </small>
                 </>
               ) : (
                 <p>Preparando sua jornada...</p>
               )}
             </section>
+          </section>
+          <section id="student-ranking" aria-label="Ranking e conquistas">
+            <Leaderboard connected={isSupabaseConfigured} />
           </section>
           {gamificationError && (
             <p className="gamification-message" role="status">
@@ -1783,6 +1879,7 @@ function StudentProfile({
               )}
             </div>
           </section>
+          <LegalDocuments id="student-legal" />
         </section>
       </div>
       {selectedLessonId && (
@@ -2146,7 +2243,7 @@ function PracticeProfile({
     }
   }
   return (
-    <main className="profile-page">
+    <main id="main-content" tabIndex={-1} className="profile-page">
       <Header area="PRÁTICA ADAPTATIVA" onLogout={onLogout} />
       <section className="profile-content narrow">
         <button className="back-button" onClick={onBack}>
@@ -2216,7 +2313,7 @@ function PracticeProfile({
 /** Reúne as tarefas diárias do professor sem misturar funções administrativas. */
 function TeacherProfile({ onLogout }: { onLogout: () => void }) {
   type TeacherTab =
-    'overview' | 'classes' | 'reports' | 'contents' | 'questions' | 'messages' | 'ai';
+    'overview' | 'classes' | 'reports' | 'contents' | 'questions' | 'messages' | 'ai' | 'legal';
   const [activeTab, setActiveTab] = useState<TeacherTab>('overview');
   const [overview, setOverview] = useState<TeacherOverview>(
     supabase
@@ -2342,6 +2439,7 @@ function TeacherProfile({ onLogout }: { onLogout: () => void }) {
     { id: 'questions', label: 'Questões' },
     { id: 'messages', label: 'Mensagens' },
     { id: 'ai', label: 'Recomendação IA' },
+    { id: 'legal', label: 'Termos e privacidade' },
   ];
   const teacherGlyphs: Record<TeacherTab, string> = {
     overview: 'VG',
@@ -2351,6 +2449,7 @@ function TeacherProfile({ onLogout }: { onLogout: () => void }) {
     questions: 'QT',
     messages: 'MS',
     ai: 'IA',
+    legal: 'TP',
   };
 
   async function createClass(event: FormEvent<HTMLFormElement>) {
@@ -2594,7 +2693,7 @@ function TeacherProfile({ onLogout }: { onLogout: () => void }) {
   }
 
   return (
-    <main className="profile-page teacher-workspace">
+    <main id="main-content" tabIndex={-1} className="profile-page teacher-workspace">
       <Header area="ÁREA DO PROFESSOR" onLogout={onLogout} />
       <div className="teacher-app-shell">
         <aside className="teacher-sidebar" aria-label="Navegação do professor">
@@ -2751,6 +2850,9 @@ function TeacherProfile({ onLogout }: { onLogout: () => void }) {
                   </button>
                 </form>
               </div>
+              {selectedClassId && supabase && (
+                <Leaderboard key={selectedClassId} teacherClassId={selectedClassId} />
+              )}
               <div className="class-workbench">
                 <section className="teacher-surface class-roster">
                   <div className="teacher-section-title">
@@ -2934,6 +3036,8 @@ function TeacherProfile({ onLogout }: { onLogout: () => void }) {
             </section>
           )}
 
+          {activeTab === 'reports' && <NotificationPreferences />}
+
           {activeTab === 'contents' && (
             <div className="content-studio">
               <section className="teacher-surface">
@@ -3082,6 +3186,7 @@ function TeacherProfile({ onLogout }: { onLogout: () => void }) {
               </article>
             </section>
           )}
+          {activeTab === 'legal' && <LegalDocuments />}
         </section>
       </div>
     </main>
@@ -3095,50 +3200,121 @@ function DifficultyTrend({ points }: { points: TrendPoint[] }) {
       <p className="teacher-empty">Ainda não há tentativas suficientes para formar o gráfico.</p>
     );
   return (
-    <div className="difficulty-trend" role="img" aria-label="Gráfico da dificuldade por semana">
-      {points.map((point) => (
-        <div
-          className="trend-column"
-          key={point.week}
-          title={`${point.week}: dificuldade ${point.difficulty_score}%`}
-        >
-          <span className="trend-value">{point.difficulty_score}%</span>
-          <span className="trend-bar-track">
-            <span
-              className="trend-bar"
-              style={{ height: `${Math.max(8, point.difficulty_score)}%` }}
-            />
-          </span>
-          <small>{point.week.replace(/^\d{4}-/, '')}</small>
-        </div>
-      ))}
-    </div>
+    <figure style={{ margin: 0 }}>
+      <figcaption>Dificuldade por semana. Percentuais menores indicam melhora.</figcaption>
+      <div className="difficulty-trend" aria-hidden="true">
+        {points.map((point) => (
+          <div
+            className="trend-column"
+            key={point.week}
+            title={`${point.week}: dificuldade ${point.difficulty_score}%`}
+          >
+            <span className="trend-value">{point.difficulty_score}%</span>
+            <span className="trend-bar-track">
+              <span
+                className="trend-bar"
+                style={{ height: `${Math.max(8, point.difficulty_score)}%` }}
+              />
+            </span>
+            <small>{point.week.replace(/^\d{4}-/, '')}</small>
+          </div>
+        ))}
+      </div>
+      <details>
+        <summary>Ver valores do gráfico</summary>
+        <table>
+          <caption>Dificuldade registrada por semana</caption>
+          <thead>
+            <tr>
+              <th scope="col">Semana</th>
+              <th scope="col">Dificuldade</th>
+            </tr>
+          </thead>
+          <tbody>
+            {points.map((point) => (
+              <tr key={point.week}>
+                <th scope="row">{point.week}</th>
+                <td>{point.difficulty_score}%</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </details>
+    </figure>
   );
 }
 
 /** Permite que apenas a administradora crie contas e atribua cargos iniciais. */
+type AdminTab =
+  | 'overview'
+  | 'performance'
+  | 'staff'
+  | 'users'
+  | 'activity'
+  | 'messages'
+  | 'content'
+  | 'privacy'
+  | 'legal';
+
+const adminTabs: { id: AdminTab; label: string; glyph: string }[] = [
+  { id: 'overview', label: 'Visão geral', glyph: 'VG' },
+  { id: 'performance', label: 'Desempenho', glyph: 'DS' },
+  { id: 'staff', label: 'Professores e turmas', glyph: 'PT' },
+  { id: 'users', label: 'Usuários', glyph: 'US' },
+  { id: 'activity', label: 'Atividades', glyph: 'AT' },
+  { id: 'messages', label: 'Mensagens', glyph: 'MS' },
+  { id: 'content', label: 'Conteúdo', glyph: 'CO' },
+  { id: 'privacy', label: 'Privacidade', glyph: 'PV' },
+  { id: 'legal', label: 'Termos e privacidade', glyph: 'TP' },
+];
+
+type AdminOverview = {
+  users: number;
+  students: number;
+  teachers: number;
+  admins: number;
+  subjects: number;
+  lessons: number;
+  questions: number;
+  draft_questions: number;
+};
+
+const demoAdminUsers: AdminUser[] = [
+  { id: 'demo-student', full_name: 'Ana Souza', email: 'ana@escola.com', role: 'student' },
+  {
+    id: 'demo-teacher',
+    full_name: 'Prof. Carlos Lima',
+    email: 'carlos@escola.com',
+    role: 'teacher',
+  },
+];
+
 function AdminProfile({ onLogout }: { onLogout: () => void }) {
-  const [people, setPeople] = useState<{ name: string; role: string }[]>(
-    supabase
-      ? []
-      : [
-          { name: 'Ana Souza', role: 'Estudante' },
-          { name: 'Prof. Carlos Lima', role: 'Professor' },
-        ],
-  );
+  const [activeTab, setActiveTab] = useState<AdminTab>('overview');
+  const [people, setPeople] = useState<AdminUser[]>(supabase ? [] : demoAdminUsers);
+  const [overview, setOverview] = useState<AdminOverview | null>(null);
+  const [activityUser, setActivityUser] = useState<{ id: string; name: string } | null>(null);
   const [adminSubjects, setAdminSubjects] = useState<AdminSubject[]>([]);
   const [teacherRequests, setTeacherRequests] = useState<TeacherRegistrationRequest[]>([]);
   const [message, setMessage] = useState('');
   const [selectedRole, setSelectedRole] = useState<'student' | 'teacher'>('student');
   const [busy, setBusy] = useState(false);
 
+  async function loadUsers() {
+    if (!supabase) return;
+    const response = await apiFetch('/admin/users');
+    if (response.ok) setPeople((await response.json()) as AdminUser[]);
+    else setMessage(await apiError(response, 'Não foi possível carregar os usuários.'));
+  }
+
   useEffect(() => {
     let active = true;
     async function loadAdminData() {
       if (!supabase) return;
-      const [requestsResponse, usersResponse] = await Promise.all([
+      const [requestsResponse, usersResponse, overviewResponse] = await Promise.all([
         apiFetch('/admin/teacher-requests'),
         apiFetch('/admin/users'),
+        apiFetch('/admin/overview'),
       ]);
       if (!active) return;
       if (!requestsResponse.ok || !usersResponse.ok) {
@@ -3146,18 +3322,8 @@ function AdminProfile({ onLogout }: { onLogout: () => void }) {
         return;
       }
       setTeacherRequests((await requestsResponse.json()) as TeacherRegistrationRequest[]);
-      const users = (await usersResponse.json()) as { full_name: string; role: Role }[];
-      setPeople(
-        users.map((person) => ({
-          name: person.full_name,
-          role:
-            person.role === 'teacher'
-              ? 'Professor'
-              : person.role === 'admin'
-                ? 'Administradora'
-                : 'Estudante',
-        })),
-      );
+      setPeople((await usersResponse.json()) as AdminUser[]);
+      if (overviewResponse.ok) setOverview((await overviewResponse.json()) as AdminOverview);
     }
     void loadAdminData();
     return () => {
@@ -3193,8 +3359,13 @@ function AdminProfile({ onLogout }: { onLogout: () => void }) {
           return;
         }
       }
-      setPeople((current) => [...current, { name, role: label }]);
-      setMessage('Usuário incluído com sucesso.');
+      if (supabase) await loadUsers();
+      else
+        setPeople((current) => [
+          ...current,
+          { id: `demo-${current.length}`, full_name: name, email: String(data.get('email')), role },
+        ]);
+      setMessage(`${label} incluído com sucesso.`);
       form.reset();
     } finally {
       setBusy(false);
@@ -3221,7 +3392,7 @@ function AdminProfile({ onLogout }: { onLogout: () => void }) {
         return;
       }
       setTeacherRequests((current) => current.filter((item) => item.id !== request.id));
-      setPeople((current) => [...current, { name: request.full_name, role: 'Professor' }]);
+      await loadUsers();
       setMessage(`Cadastro de ${request.full_name} aprovado em ${subject}.`);
     } finally {
       setBusy(false);
@@ -3229,130 +3400,215 @@ function AdminProfile({ onLogout }: { onLogout: () => void }) {
   }
 
   return (
-    <main className="profile-page">
+    <main id="main-content" tabIndex={-1} className="profile-page teacher-workspace">
       <Header area="ÁREA DA ADMINISTRADORA" onLogout={onLogout} />
-      <section className="profile-content narrow">
-        <p className="eyebrow">GERENCIAMENTO DE USUÁRIOS</p>
-        <h1>Adicionar pessoas</h1>
-        <p className="subtitle">Acompanhe o sistema, organize disciplinas, aulas e pessoas.</p>
-        <AdminCatalog onSubjectsChange={setAdminSubjects} />
-        <AuditLogPanel />
-        <section className="teacher-request-queue" aria-labelledby="teacher-requests-title">
-          <div className="request-queue-heading">
-            <div>
-              <p className="eyebrow">APROVAÇÃO DOCENTE</p>
-              <h2 id="teacher-requests-title">Solicitações de professores</h2>
-            </div>
-            <span>{teacherRequests.length} pendente(s)</span>
+      <div className="teacher-app-shell">
+        <aside className="teacher-sidebar" aria-label="Navegação da administração">
+          <NavigationDock
+            ariaLabel="Navegação da administração"
+            items={adminTabs.map((tab) => ({
+              id: tab.id,
+              label: tab.label,
+              glyph: tab.glyph,
+              active: activeTab === tab.id,
+              onSelect: () => setActiveTab(tab.id),
+            }))}
+          />
+          <div className="teacher-privacy-note">
+            <strong>Privacidade ativa</strong>
+            <p>Desempenho só em totais. Logs ficam no máximo 7 dias.</p>
           </div>
-          {teacherRequests.length ? (
-            <div className="teacher-request-list">
-              {teacherRequests.map((request) => (
-                <article className="teacher-request-row" key={request.id}>
-                  <Avatar name={request.full_name} />
+        </aside>
+
+        <section className="teacher-main">
+          <header className="teacher-heading">
+            <div>
+              <p className="eyebrow">ADMINISTRAÇÃO</p>
+              <h1>{adminTabs.find((tab) => tab.id === activeTab)?.label}</h1>
+            </div>
+            <p className="teacher-status" role="status" aria-live="polite">
+              {busy ? 'Atualizando dados...' : message}
+            </p>
+          </header>
+
+          {/* O catálogo fica montado para fornecer as disciplinas aos formulários. */}
+          <div hidden={activeTab !== 'content'}>
+            <AdminCatalog onSubjectsChange={setAdminSubjects} />
+          </div>
+
+          {activeTab === 'performance' && <AdminPerformance />}
+          {activeTab === 'staff' && <AdminTeachersClasses />}
+          {activeTab === 'activity' && (
+            <AuditLogPanel user={activityUser} onClearUser={() => setActivityUser(null)} />
+          )}
+          {activeTab === 'messages' && <CommunicationCenter role="admin" requestedMode="direct" />}
+          {activeTab === 'privacy' && (
+            <div className="teacher-view-stack">
+              <AdminPrivacyRequests />
+              <AdminAdmissionPanel />
+            </div>
+          )}
+          {activeTab === 'legal' && <LegalDocuments />}
+
+          {activeTab === 'overview' && (
+            <div className="teacher-view-stack">
+              {overview && (
+                <section className="teacher-metric-strip" aria-label="Resumo do sistema">
                   <div>
-                    <strong>{request.full_name}</strong>
-                    <small>{request.email}</small>
+                    <span>Estudantes</span>
+                    <strong>{overview.students}</strong>
                   </div>
-                  <form onSubmit={(event) => void approveTeacherRequest(event, request)}>
+                  <div>
+                    <span>Professores</span>
+                    <strong>{overview.teachers}</strong>
+                  </div>
+                  <div>
+                    <span>Disciplinas</span>
+                    <strong>{overview.subjects}</strong>
+                  </div>
+                  <div>
+                    <span>Aulas</span>
+                    <strong>{overview.lessons}</strong>
+                  </div>
+                  <div>
+                    <span>Questões em rascunho</span>
+                    <strong>{overview.draft_questions}</strong>
+                  </div>
+                </section>
+              )}
+              <section className="teacher-request-queue" aria-labelledby="teacher-requests-title">
+                <div className="request-queue-heading">
+                  <div>
+                    <p className="eyebrow">APROVAÇÃO DOCENTE</p>
+                    <h2 id="teacher-requests-title">Solicitações de professores</h2>
+                  </div>
+                  <span>{teacherRequests.length} pendente(s)</span>
+                </div>
+                {teacherRequests.length ? (
+                  <div className="teacher-request-list">
+                    {teacherRequests.map((request) => (
+                      <article className="teacher-request-row" key={request.id}>
+                        <Avatar name={request.full_name} />
+                        <div>
+                          <strong>{request.full_name}</strong>
+                          <small>{request.email}</small>
+                        </div>
+                        <form onSubmit={(event) => void approveTeacherRequest(event, request)}>
+                          <label>
+                            <span className="sr-only">Disciplina de {request.full_name}</span>
+                            <select
+                              name="subject"
+                              defaultValue={request.requested_subject}
+                              required
+                            >
+                              {adminSubjects.map((subject) => (
+                                <option key={subject.name} value={subject.name}>
+                                  {subject.name}
+                                </option>
+                              ))}
+                            </select>
+                          </label>
+                          <button className="outline-button" disabled={busy}>
+                            Aprovar
+                          </button>
+                        </form>
+                      </article>
+                    ))}
+                  </div>
+                ) : (
+                  <p className="teacher-empty">Nenhuma solicitação aguardando aprovação.</p>
+                )}
+              </section>
+            </div>
+          )}
+
+          {activeTab === 'users' && (
+            <div className="teacher-view-stack">
+              <div className="admin-layout">
+                <section className="profile-panel">
+                  <h2>Novo usuário</h2>
+                  <form className="auth-form compact-form" onSubmit={addPerson}>
                     <label>
-                      <span className="sr-only">Disciplina de {request.full_name}</span>
-                      <select name="subject" defaultValue={request.requested_subject} required>
-                        {adminSubjects.map((subject) => (
-                          <option key={subject.name} value={subject.name}>
-                            {subject.name}
-                          </option>
-                        ))}
+                      NOME COMPLETO
+                      <input name="name" placeholder="Ex: Maria Silva" required />
+                    </label>
+                    <label>
+                      E-MAIL
+                      <input name="email" type="email" placeholder="usuario@escola.com" required />
+                    </label>
+                    <label>
+                      SENHA TEMPORÁRIA
+                      <input
+                        name="password"
+                        type="password"
+                        minLength={6}
+                        maxLength={128}
+                        pattern="(?=.*[a-z])(?=.*[A-Z])(?=.*\d).{6,128}"
+                        title="Use pelo menos 6 caracteres, incluindo uma letra maiúscula, uma minúscula e um número."
+                        required
+                      />
+                    </label>
+                    <label>
+                      CARGO
+                      <select
+                        name="role"
+                        value={selectedRole}
+                        onChange={(event) =>
+                          setSelectedRole(event.target.value as 'student' | 'teacher')
+                        }
+                      >
+                        <option value="student">Estudante</option>
+                        <option value="teacher">Professor</option>
                       </select>
                     </label>
-                    <button className="outline-button" disabled={busy}>
-                      Aprovar
+                    {selectedRole === 'teacher' && (
+                      <label>
+                        DISCIPLINA
+                        <select
+                          name="subject"
+                          defaultValue=""
+                          required
+                          aria-describedby="subject-help"
+                        >
+                          <option value="" disabled>
+                            Selecione...
+                          </option>
+                          {adminSubjects.map((subject) => (
+                            <option key={subject.name} value={subject.name}>
+                              {subject.name}
+                            </option>
+                          ))}
+                        </select>
+                        <small id="subject-help" className="field-help">
+                          Cada disciplina recebe um único professor neste projeto.
+                        </small>
+                      </label>
+                    )}
+                    {message && (
+                      <p className="form-message" role="status">
+                        {message}
+                      </p>
+                    )}
+                    <button className="primary-button" disabled={busy}>
+                      Adicionar usuário
                     </button>
                   </form>
-                </article>
-              ))}
+                </section>
+              </div>
+              <AdminUsers
+                users={people}
+                onViewActivity={(person) => {
+                  setActivityUser({ id: person.id, name: person.full_name });
+                  setActiveTab('activity');
+                }}
+                onDeleted={(person) =>
+                  setPeople((current) => current.filter((item) => item.id !== person.id))
+                }
+              />
             </div>
-          ) : (
-            <p className="teacher-empty">Nenhuma solicitação aguardando aprovação.</p>
           )}
         </section>
-        <div className="admin-layout">
-          <section className="profile-panel">
-            <h2>Novo usuário</h2>
-            <form className="auth-form compact-form" onSubmit={addPerson}>
-              <label>
-                NOME COMPLETO
-                <input name="name" placeholder="Ex: Maria Silva" required />
-              </label>
-              <label>
-                E-MAIL
-                <input name="email" type="email" placeholder="usuario@escola.com" required />
-              </label>
-              <label>
-                SENHA TEMPORÁRIA
-                <input
-                  name="password"
-                  type="password"
-                  minLength={6}
-                  maxLength={128}
-                  pattern="(?=.*[a-z])(?=.*[A-Z])(?=.*\d).{6,128}"
-                  title="Use pelo menos 6 caracteres, incluindo uma letra maiúscula, uma minúscula e um número."
-                  required
-                />
-              </label>
-              <label>
-                CARGO
-                <select
-                  name="role"
-                  value={selectedRole}
-                  onChange={(event) => setSelectedRole(event.target.value as 'student' | 'teacher')}
-                >
-                  <option value="student">Estudante</option>
-                  <option value="teacher">Professor</option>
-                </select>
-              </label>
-              {selectedRole === 'teacher' && (
-                <label>
-                  DISCIPLINA
-                  <select name="subject" defaultValue="" required aria-describedby="subject-help">
-                    <option value="" disabled>
-                      Selecione...
-                    </option>
-                    {adminSubjects.map((subject) => (
-                      <option key={subject.name} value={subject.name}>
-                        {subject.name}
-                      </option>
-                    ))}
-                  </select>
-                  <small id="subject-help" className="field-help">
-                    Cada disciplina recebe um único professor neste projeto.
-                  </small>
-                </label>
-              )}
-              {message && (
-                <p className="form-message" role="status">
-                  {message}
-                </p>
-              )}
-              <button className="primary-button" disabled={busy}>
-                Adicionar usuário
-              </button>
-            </form>
-          </section>
-          <section className="profile-panel">
-            <h2>Usuários incluídos</h2>
-            <div className="people-list">
-              {people.map((person, index) => (
-                <div className="person-row" key={`${person.name}-${index}`}>
-                  <Avatar name={person.name} />
-                  <strong>{person.name}</strong>
-                  <span className="badge">{person.role}</span>
-                </div>
-              ))}
-            </div>
-          </section>
-        </div>
-      </section>
+      </div>
     </main>
   );
 }

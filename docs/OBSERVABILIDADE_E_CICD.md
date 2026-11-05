@@ -20,7 +20,7 @@ O FastAPI agora oferece dois sinais próprios para infraestrutura:
 
 As chamadas recebem `X-Request-ID` e geram um log JSON com rota, método, status e tempo em milissegundos. O Railway consegue armazenar esses logs e o mesmo formato pode ser enviado ao Grafana, SigNoz ou outro coletor no próximo passo.
 
-Além do log operacional, as funcionalidades autenticadas geram uma trilha persistente em `access_audit_logs`. O `request_id` liga os dois registros sem copiar corpo, token ou IP puro. A administração consulta essa trilha pelo próprio aplicativo.
+Además do log operacional, as funcionalidades autenticadas geram uma trilha persistente em `access_audit_logs`. O `request_id` liga os dois registros sem copiar corpo, token ou IP puro. A administração consulta essa trilha pelo próprio aplicativo.
 
 No Railway, configure o healthcheck do backend como `/health/live`. Para um monitor externo, use `/health/ready` e crie um alerta para respostas diferentes de 200 ou latência acima do limite escolhido.
 

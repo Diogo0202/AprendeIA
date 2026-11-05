@@ -1,10 +1,14 @@
 # Documentação do AprendeIA
 
-Este diretório reúne a visão geral do projeto e a explicação de cada área do sistema. Os textos refletem o código e as migrations existentes em 20 de setembro de 2026.
+Este diretório reúne a visão geral e a explicação de cada área. A revisão de RF-08 e RF-32 é de **02/11/2026**; documentos históricos mantêm a data da própria verificação. O status funcional e o resumo de continuidade registram as pendências atuais de ativação.
 
 ## Comece por aqui
 
 - [Projeto](PROJETO.md) — objetivo, arquitetura, perfis e estado atual.
+- [Status dos requisitos funcionais](STATUS_REQUISITOS_FUNCIONAIS.md) — varredura do código, percentuais por requisito e pendências verificadas.
+- [Pedidos de privacidade](PEDIDOS_DE_PRIVACIDADE.md): fluxo do titular, revisão e execução do RF-08.
+- [Monitor externo](MONITORAMENTO_EXTERNO.md): configuração, alertas e ativação do RF-32.
+- [Continuidade RF-08 e RF-32](CONTINUIDADE_RF08_RF32_2026-11-02.md): resumo da entrega local, testes e porcentagens.
 - [Mapa do projeto](MAPA_DO_PROJETO.md) — localização rápida das partes principais do código.
 - [Autenticação e acesso](AUTENTICACAO_E_ACESSO.md) — cadastro, login, cargos e limite de tentativas.
 - [Área do aluno](AREA_DO_ALUNO.md) — matérias, progresso, prática adaptativa e conquistas.
@@ -21,8 +25,11 @@ Este diretório reúne a visão geral do projeto e a explicação de cada área 
 
 ## Documentos específicos já existentes
 
+- [Privacidade, cookies e checklist](PRIVACIDADE_COOKIES_ACESSIBILIDADE.md)
+- [Auditoria de acessibilidade de 05/11/2026](AUDITORIA_ACESSIBILIDADE_2026-11-05.md)
 - [Arquitetura](ARQUITETURA.md)
 - [Gamificação](GAMIFICACAO.md)
+- [Ranking semanal, conquistas e checklist](RANKING_E_CONQUISTAS.md)
 - [Painel do professor](PAINEL_PROFESSOR.md)
 - [Cadastro de professor](CADASTRO_PROFESSOR.md)
 - [Alertas de dificuldade](ALERTAS_DIFICULDADE.md)

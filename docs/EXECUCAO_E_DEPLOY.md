@@ -50,7 +50,7 @@ O Clarity é opcional e deve continuar desativado no ambiente dos estudantes. A
 Microsoft informa que o serviço não deve ser usado em sites e aplicativos
 direcionados a menores de 18 anos. Para uma demonstração restrita a adultos,
 preencha o ID público, altere a flag para `true` e mantenha o consentimento e o
-mascaramento já implementados no frontend.
+mascaramento já implementados no frontend. **A flag `VITE_ENABLE_CLARITY` permanece como `false` por padrão e só deve ser alterada para `true` em ambientes de testes com adultos e consentimento registrado, conforme documentado após a conclusão de RF-29.**
 
 ## Railway
 
@@ -80,9 +80,11 @@ O banco deve vir primeiro porque o backend falha fechado quando a função `rese
 2. Executar `npm run build` em `frontend`.
 3. Confirmar que `.env`, `.env.local` e chaves não aparecem no `git diff`.
 4. Confirmar todas as migrations aplicadas no Supabase, principalmente as duas de 14 e 15 de setembro.
-5. Configurar `RATE_LIMIT_PEPPER`, OpenAI, SMTP e segredo semanal no Railway.
+5. Configurar `RATE_LIMIT_PEPPER`, OpenAI, SMTP e segredo semanal no Railway - **todos os segredos já estão configurados** (confere-se com RF-05, RF-22, RF-25).
 6. Aplicar `20260921150000_progressive_login_lockout.sql` e testar login correto, cinco senhas erradas, retorno `429` e `Retry-After: 300`.
 7. Testar uma conta de cada cargo.
+7.0. Configurar `TURNSTILE_SECRET_KEY` no Railway antes do deploy. Em `production`, a falta dessa chave bloqueia o login (`503`). No Supabase, ativar o CAPTCHA Turnstile em Authentication → Bot and Abuse Protection.
+7.1. No Supabase, em Authentication > Sign In / Providers > Email, conferir **Minimum password length = 6** e **Password requirements = Lowercase, uppercase letters and digits**. Testar que um cadastro com `abcdef1` é recusado pelo próprio Supabase.
 8. Conferir logs do backend sem credenciais ou tokens.
 
 ## Estado atual

@@ -13,10 +13,15 @@ class CommunicationRulesTests(unittest.TestCase):
         self.assertFalse(can_start_direct_conversation("student", "student"))
         self.assertFalse(can_start_direct_conversation("student", "admin"))
 
-    def test_teacher_can_message_students_and_other_teachers(self):
+    def test_teacher_can_message_students_teachers_and_administration(self):
         self.assertTrue(can_start_direct_conversation("teacher", "student"))
         self.assertTrue(can_start_direct_conversation("teacher", "teacher"))
-        self.assertFalse(can_start_direct_conversation("teacher", "admin"))
+        self.assertTrue(can_start_direct_conversation("teacher", "admin"))
+
+    def test_administration_only_talks_to_teachers(self):
+        self.assertTrue(can_start_direct_conversation("admin", "teacher"))
+        self.assertFalse(can_start_direct_conversation("admin", "student"))
+        self.assertFalse(can_start_direct_conversation("admin", "admin"))
 
     def test_direct_key_is_stable_for_both_directions(self):
         self.assertEqual(
