@@ -1,7 +1,7 @@
 # Status dos requisitos funcionais do AprendeIA
 
-**Data da revisão:** 04/11/2026 (revalidação completa; revisão anterior em 02/11/2026)
-**Branch verificada:** `entrega-2809`
+**Data da revisão:** 09/11/2026 (integração por agentes e migrations no Supabase)
+**Branch verificada:** `entrega1109`
 **Escopo:** código React/FastAPI, migrations, workflows e documentação do checkout local. A revisão inclui os pedidos de privacidade e o monitor externo; `darkmate/`, ambientes locais, dependências e saídas Graphify ficam fora da contagem funcional.
 
 Este levantamento compara o que o projeto descreve com rotas, telas, regras de negócio, migrations e testes encontrados no checkout. Os percentuais medem a implementação no repositório, não a publicação em produção.
@@ -16,7 +16,7 @@ Este levantamento compara o que o projeto descreve com rotas, telas, regras de n
 
 A revisão considera **28 requisitos em 100%**, **8 em 50%** e **0 em 0%**. Com pesos iguais, o índice é `(28 + 8 × 0,5) / 36 × 100 = 88,9%`. O RF-34 foi incluído em 03/11/2026; o RF-35 e o RF-36, em 04/11/2026.
 
-**Código e publicação são medidas diferentes.** Em 04/11/2026, o projeto Supabase `auwwfetxedberounjglo` está ativo, mas tem só 10 migrations aplicadas, a última de 13/09/2026 (`login_attempt_reservation`). Nenhuma migration posterior foi aplicada no remoto: auditoria, consentimento, jornada de aprendizagem, comunicação, pedidos de privacidade, ciclo de conta, gamificação, painel admin, políticas 1.2 a 1.6 e termos. Os serviços `aprendeia-api` e `aprendeia-web` estão offline no Railway. Hoje, nenhum requisito desta tabela está publicado e utilizável em produção. O RF-08 está completo no escopo de código local; o RF-32 aguarda ativação externa. Esses números não medem cobertura de testes, esforço restante ou prontidão de produção.
+**Código e publicação são medidas diferentes.** Em 09/11/2026, o Supabase `auwwfetxedberounjglo` foi restaurado e está ativo, com 35 migrations aplicadas até a política 1.7 e a proteção de ciclo de conta no envio. As duas contas antigas foram preservadas; a prévia informa execução de retenção desativada. A API Railway e o frontend Vercel ainda não têm deploy desta versão comprovado. As integrações reais de recuperação, CAPTCHA, e-mail e IA seguem pendentes. O índice de 88,9% permanece como indicador de código com a régua desta tabela, não como aprovação produtiva. A política 1.7 esclarece que a limpeza automática não está concluída.
 
 ## Requisitos funcionais verificados
 
@@ -58,6 +58,21 @@ A revisão considera **28 requisitos em 100%**, **8 em 50%** e **0 em 0%**. Com 
 | RF-34 | Preferências de notificação: o professor liga ou desliga o alerta imediato e o resumo semanal por e-mail (RF-10 da monografia). | **100%** | `backend/notification_preferences.py`, rotas `GET/PUT /teacher/notification-preferences`, filtro de envio em `synchronize_difficulty_alert` e no resumo semanal, componente `NotificationPreferences.tsx` (aba Relatórios) e migration `20261103120000_notification_preferences.sql`. O padrão mantém os envios; desligar o e-mail não remove o alerta do painel. A mudança gera o evento `UPDATE_NOTIFICATION_PREFERENCES`. Estudantes e administração não recebem e-mails hoje, por isso não têm a opção. A migration precisa ser aplicada antes do deploy do backend. |
 | RF-35 | Painel administrativo: desempenho agregado por turma e professor, lista de professores e turmas, histórico de atividades por usuário, exclusão de estudantes e professores e mensagens com professores. | **100%** | `backend/admin_panel.py`, filtro `user_id` em `/admin/audit-logs`, migration `20261105120000_admin_panel.sql`, componentes `admin/AdminPanels.tsx`, `AuditLogPanel.tsx` e `CommunicationCenter.tsx`. Testes: 14 Python, 11 cenários PostgreSQL e 9 Vitest (04/11/2026). Indicadores só em totais, com grupos menores que 3 alunos ocultos; administração não exclui a si mesma nem outras contas administrativas. A Política de Privacidade 1.5 (migration `20261107110000_privacy_policy_v1_5.sql`) descreve o painel e exige novo aceite. Ver `docs/PAINEL_ADMINISTRATIVO.md`. |
 | RF-36 | Termos de Uso com aceite obrigatório e aba "Termos e privacidade" para estudantes, professores e administração, com a política, os termos e a LGPD citada. | **100%** | `LegalDocuments.tsx` (aba e modal dos termos), duas caixas obrigatórias no cadastro e no novo aceite, `terms_version` em `POST /privacy/accept`, bloqueio `428` sem os termos e migration `20261108110000_terms_of_use_v1_0.sql` (perfil, evidência, auditoria e limpeza do horário). Testes: 3 Vitest da aba, cadastro em `App.test.tsx`, Python em `test_access_audit.py` e 5 cenários PostgreSQL. Os termos e os resumos da LGPD precisam de validação jurídica. Ver `docs/TERMOS_E_PRIVACIDADE.md`. |
+
+## Entrega de 09/11/2026
+
+- Python: 218 testes aprovados; React: 115 testes aprovados.
+- Navegador: 64 cenários aprovados em Chromium desktop e emulação móvel.
+- Scripts Node: 40 testes aprovados. Build TypeScript/Vite e Bandit aprovados.
+- Seis suítes SQL isoladas aprovadas. SQL real não equivale a Auth, Storage e cron reais.
+- Supabase: 25 migrations novas aplicadas sobre as dez antigas; política 1.7 e RLS verificadas por consulta sem dados pessoais.
+- Retenção: duas contas vencidas, nenhuma removida; faltam RPCs executoras e callback de resumo pré-exclusão.
+- RF-22 agora aceita transporte Resend HTTPS, com deduplicação e estado `provider_accepted`; falta configuração e recebimento reais.
+- RF-31 inclui `entrega1109` e verificação do SHA produtivo; falta comprovar o CI remoto do commit final e os deploys.
+- RF-32 mantém alertas por issue, flags desativadas até configuração de URLs e teste externo.
+- RF-29 permanece desligado por decisão do responsável.
+
+Checklist operacional: [entrega 1109](CHECKLIST_ENTREGA1109.md). Os trechos datados abaixo permanecem como histórico, incluindo contagens e estados que mudaram.
 
 ## Resultado das validações locais
 

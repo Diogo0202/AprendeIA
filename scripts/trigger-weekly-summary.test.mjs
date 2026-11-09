@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { interpret, main, readConfig, report, triggerSummary } from './trigger-weekly-summary.mjs';
 const secret='test-secret';
 const config={endpoint:'https://api.example/internal/weekly-difficulty-summary',secret};
-const counts={smtp_accepted:2,received:0,teachers_skipped:0,failed_deliveries:0,unknown_deliveries:0,processing_deliveries:0};
+const counts={smtp_accepted:2,provider_accepted:0,received:0,teachers_skipped:0,failed_deliveries:0,unknown_deliveries:0,processing_deliveries:0};
 const reply=(body,status=200)=>new Response(JSON.stringify(body),{status});
 
 test('HTTPS e credenciais somente no cabeçalho, sem redirects', async()=>{
@@ -51,6 +51,16 @@ test('resposta remota não pode injetar dados no comprovante',()=>{
   assert.ok(!report(result).includes(secret));
 });
 
+test('aceitação HTTPS é reconhecida sem inventar recebimento ou aceitação SMTP',()=>{
+  const result=interpret(200,{...counts,status:'provider_accepted',smtp_accepted:0,provider_accepted:2});
+  assert.equal(result.ok,true);
+  assert.equal(result.smtp_accepted,0);
+  assert.equal(result.received,0);
+  assert.match(report(result),/Aceitos pelo provedor HTTPS: 2/);
+  assert.equal(interpret(200,{...counts,status:'provider_accepted',provider_accepted:-1}).ok,false);
+});
+
 test('configuração ausente encerra com erro',async()=>{
   assert.equal(await main({}),1);
+  assert.throws(()=>readConfig({MONITOR_API_URL:'https://api.example',WEEKLY_SUMMARY_CRON_SECRET:secret}),/WEEKLY_SUMMARY_API_URL/);
 });

@@ -86,7 +86,10 @@ grant execute on function private.lifecycle_access() to authenticated;
 -- para status; escrita continua sujeita à barreira e aos grants por coluna.
 do $$ declare t record; cmd text; condition text; begin
   for t in select n.nspname,c.relname from pg_class c join pg_namespace n on n.oid=c.relnamespace
-    where n.nspname in ('public','storage') and c.relkind in ('r','p') and c.relrowsecurity
+    -- Storage contém tabelas internas que pertencem ao serviço gerenciado.
+    -- Só os objetos e buckets são superfícies de acesso do aplicativo.
+    where (n.nspname='public' or (n.nspname='storage' and c.relname in ('objects','buckets')))
+      and c.relkind in ('r','p') and c.relrowsecurity
   loop
     foreach cmd in array array['SELECT','INSERT','UPDATE','DELETE'] loop
       condition := 'private.lifecycle_access()';

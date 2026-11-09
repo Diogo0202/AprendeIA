@@ -66,7 +66,7 @@ class CaptchaTests(unittest.TestCase):
                 verify_turnstile(None)
 
     def test_invalid_hostname_configuration_fails_closed(self):
-        for host in ("", "*.example.com", "https://example.com", "example.com:443", "example.com/path", "example.com,", "-example.com"):
+        for host in ("", "   ", "*.example.com", "https://example.com", "example.com:443", "example.com/path", "example.com,", "example.com,,www.example.com", "-example.com"):
             with self.subTest(host=host), patch.dict(os.environ, {**CONFIG, "TURNSTILE_ALLOWED_HOSTNAMES": host}, clear=True):
                 self.assertFalse(captcha_configured())
                 with self.assertRaises(CaptchaUnavailable):
@@ -205,6 +205,17 @@ class CaptchaRouteTests(unittest.TestCase):
                 with self.assertRaises(CaptchaError):
                     verify_turnstile(None)
                 send.assert_not_called()
+
+    def test_supabase_mode_requires_hostname_but_does_not_claim_local_auth_validation(self):
+        env = {**CONFIG, "TURNSTILE_VERIFICATION_MODE": "supabase", "APP_ENV": "production",
+               "SUPABASE_PUBLISHABLE_KEY": "public-test-key"}
+        with patch.dict(os.environ, {**env, "TURNSTILE_ALLOWED_HOSTNAMES": ""}, clear=True):
+            self.assertFalse(captcha_configured())
+            with self.assertRaises(CaptchaUnavailable):
+                verify_turnstile("token", expected_action="recovery")
+        with patch.dict(os.environ, env, clear=True), patch("captcha.urlopen") as siteverify:
+            verify_turnstile(" token ", expected_action="recovery")
+            siteverify.assert_not_called()
 
     def test_production_login_without_secret_is_503_and_skips_authentication(self):
         from fastapi.testclient import TestClient

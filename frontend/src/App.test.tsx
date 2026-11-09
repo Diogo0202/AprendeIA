@@ -1,5 +1,5 @@
-import { fireEvent, render, screen } from '@testing-library/react';
-import { describe, expect, it, vi } from 'vitest';
+import { cleanup, fireEvent, render, screen } from '@testing-library/react';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import App from './App';
 
 vi.mock('./lib/supabase', () => ({
@@ -11,6 +11,7 @@ vi.mock('./lib/supabase', () => ({
 }));
 
 describe('App', () => {
+  afterEach(cleanup);
   it('nao cria a conta sem marcar o aceite da politica', () => {
     render(<App />);
     fireEvent.click(screen.getByRole('button', { name: 'Crie sua conta' }));
@@ -50,5 +51,23 @@ describe('App', () => {
     render(<App />);
     fireEvent.click(screen.getByRole('button', { name: 'Esqueci minha senha' }));
     expect(screen.getByRole('heading', { name: 'Recuperar senha' })).toBeInTheDocument();
+  });
+
+  it('produção sem configuração não abre demonstração docente nem simula login', () => {
+    vi.stubEnv('DEV', false);
+    window.history.replaceState(null, '', '/?demo=teacher');
+    try {
+      render(<App />);
+      expect(screen.getByRole('heading', { name: 'Bem-vindo de volta' })).toBeInTheDocument();
+      const form = screen.getByRole('button', { name: 'Entrar' }).closest('form')!;
+      fireEvent.submit(form);
+      expect(screen.getByRole('status')).toHaveTextContent(
+        /configuração da plataforma está incompleta/,
+      );
+      expect(screen.getByRole('heading', { name: 'Bem-vindo de volta' })).toBeInTheDocument();
+    } finally {
+      window.history.replaceState(null, '', '/');
+      vi.unstubAllEnvs();
+    }
   });
 });

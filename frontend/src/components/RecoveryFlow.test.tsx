@@ -132,14 +132,17 @@ describe('RF04 recuperação pelo App atual', () => {
     expect(screen.getByRole('button', { name: 'Entrar' })).toBeInTheDocument();
   });
 
-  it('mantém redefinição aberta quando o link expirou ou Auth recusou a senha', async () => {
-    auth.updateUser.mockResolvedValue({ error: { message: 'expired' } });
-    const form = await resetForm();
-    passwords(form, 'Senha123');
-    fireEvent.submit(form);
-    expect(await screen.findByRole('status')).toHaveTextContent('Abra o link novamente');
-    expect(auth.signOut).not.toHaveBeenCalled();
-  });
+  it.each(['otp_expired', 'token_already_used'])(
+    'mantém a redefinição aberta quando o Auth simulado recusa o link: %s',
+    async (authCode) => {
+      auth.updateUser.mockResolvedValue({ error: { code: authCode } });
+      const form = await resetForm();
+      passwords(form, 'Senha123');
+      fireEvent.submit(form);
+      expect(await screen.findByRole('status')).toHaveTextContent('Abra o link novamente');
+      expect(auth.signOut).not.toHaveBeenCalled();
+    },
+  );
 
   it('preserva a tela de redefinição se getSession termina após PASSWORD_RECOVERY', async () => {
     let resolveSession!: (value: unknown) => void;

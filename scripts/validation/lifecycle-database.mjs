@@ -15,6 +15,9 @@ await db.exec(`
   create function public.rls_auto_enable() returns event_trigger language plpgsql as $$ begin return; end $$;
   create schema storage;
   create table storage.objects (id uuid primary key default gen_random_uuid(), owner_id text);
+  -- Replica uma tabela interna gerenciada: a migration não deve criar políticas nela.
+  create table storage.migrations (id integer primary key);
+  alter table storage.migrations enable row level security;
   create schema cron;
   create function cron.schedule(text,text,text) returns integer language sql as $$ select 1 $$;
 `);
@@ -31,6 +34,7 @@ for (const file of readdirSync(directory).filter((file) => file.endsWith('.sql')
 
 
 // Supabase concede SELECT por padrão; o harness precisa desse grant para testar RLS.
+assert.equal((await db.query("select count(*)::integer as count from pg_policies where schemaname='storage' and tablename='migrations' and policyname like 'rf07_%'")).rows[0].count, 0);
 await db.exec('grant select on all tables in schema public to authenticated');
 const adult = 'd0000000-0000-0000-0000-000000000001';
 const minor = 'd0000000-0000-0000-0000-000000000002';

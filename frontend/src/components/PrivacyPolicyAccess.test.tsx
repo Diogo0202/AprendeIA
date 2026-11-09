@@ -43,11 +43,11 @@ describe('Política de Privacidade e consentimento', () => {
     expect(
       screen.getByRole('heading', { name: 'Política de Privacidade do AprendeIA' }),
     ).toBeInTheDocument();
-    expect(screen.getByText(`VERSÃO ${PRIVACY_POLICY_VERSION} · 04/11/2026`)).toBeInTheDocument();
+    expect(screen.getByText(`VERSÃO ${PRIVACY_POLICY_VERSION} · 09/11/2026`)).toBeInTheDocument();
     expect(screen.getByText(/10 mensagens\s+mais recentes/i)).toBeInTheDocument();
     expect(screen.getByRole('heading', { name: /crianças e adolescentes/i })).toBeInTheDocument();
     expect(screen.getByText(/anonimização/i)).toBeInTheDocument();
-    expect(PRIVACY_POLICY_VERSION).toBe('1.6');
+    expect(PRIVACY_POLICY_VERSION).toBe('1.7');
     expect(screen.getByText(/grupos\s+com menos de 3 alunos ficam ocultos/)).toBeInTheDocument();
     expect(
       screen.getByText(/excluir contas de estudantes e professores por iniciativa/),

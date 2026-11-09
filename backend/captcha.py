@@ -43,9 +43,11 @@ def _hostname(value: str) -> str:
 
 def _configuration() -> tuple[str, str, set[str]]:
     secret, site_key, raw_hosts = (os.getenv(key, "").strip() for key in CONFIG_KEYS)
-    hosts = {_hostname(host) for host in raw_hosts.split(",")}
-    if not secret or not site_key:
+    # A lista explícita evita aceitar uma configuração sem origem permitida.
+    configured_hosts = [host.strip() for host in raw_hosts.split(",")]
+    if not secret or not site_key or not raw_hosts or any(not host for host in configured_hosts):
         raise ValueError("incomplete configuration")
+    hosts = {_hostname(host) for host in configured_hosts}
     if captcha_mode() == "supabase" and not os.getenv("SUPABASE_PUBLISHABLE_KEY", "").strip():
         raise ValueError("missing public auth client key")
     return secret, site_key, hosts
@@ -102,6 +104,7 @@ def verify_turnstile(
     if len(token) > 2048:
         raise CaptchaError(INVALID)
     if captcha_mode() == "supabase":
+        # Auth consome o token; hostname e action não são afirmados localmente.
         return
 
     payload = {"secret": secret, "response": token.strip()}

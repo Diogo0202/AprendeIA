@@ -425,7 +425,9 @@ export default function App() {
   // O atalho de apresentação só existe sem Supabase; ele não cria sessão nem
   // atravessa as permissões do backend.
   const demoTeacher =
-    !isSupabaseConfigured && new URLSearchParams(window.location.search).get('demo') === 'teacher';
+    import.meta.env.DEV &&
+    !isSupabaseConfigured &&
+    new URLSearchParams(window.location.search).get('demo') === 'teacher';
   const [view, setView] = useState<View>(demoTeacher ? 'teacher' : 'login');
   const [profile, setProfile] = useState<UserProfile>(
     demoTeacher ? { ...initialProfile, role: 'teacher' } : initialProfile,
@@ -523,6 +525,11 @@ export default function App() {
     setAuthMessage('');
     setAuthLoading(true);
     if (!supabase) {
+      if (!import.meta.env.DEV) {
+        setAuthMessage('O acesso está indisponível: a configuração da plataforma está incompleta.');
+        setAuthLoading(false);
+        return;
+      }
       // A demonstração local fica somente como estudante; cargos reais exigem
       // sessão do Supabase e são definidos pelo perfil carregado no backend.
       setProfile(initialProfile);
@@ -613,8 +620,14 @@ export default function App() {
       profileSetupComplete: requestedRole !== 'student',
     };
     if (!supabase) {
-      // No modo de apresentação não existe permissão real; o atalho serve apenas
-      // para conferir a experiência de cada perfil no navegador local.
+      if (!import.meta.env.DEV) {
+        setAuthMessage(
+          'O cadastro está indisponível: a configuração da plataforma está incompleta.',
+        );
+        setAuthLoading(false);
+        return;
+      }
+      // O atalho de apresentação fica restrito ao desenvolvimento local.
       setProfile(nextProfile);
       setView(requestedRole);
       setAuthLoading(false);

@@ -672,7 +672,8 @@ test("workflow fixa frequência, permissões e concorrência sem interpolar vari
   assert.match(workflow, /timeout-minutes: 3/);
   assert.match(workflow, /runs-on: ubuntu-latest/);
   assert.match(workflow, /node-version: '22'/);
-  assert.match(workflow, /contents: read\s+issues: write/);
+  assert.match(workflow, /contents: read/);
+  assert.match(workflow, /issues: write/);
   assert.match(
     workflow,
     /group: aprendeia-rf32-external-monitor\s+cancel-in-progress: false/,
@@ -680,13 +681,17 @@ test("workflow fixa frequência, permissões e concorrência sem interpolar vari
   assert.match(workflow, /persist-credentials: false/);
   assert.match(
     workflow,
-    /ref: \$\{\{ github.event.repository.default_branch \}\}/,
+    /ref: main/,
   );
   assert.match(
     workflow,
     /MONITOR_FRONTEND_URL: \$\{\{ vars.MONITOR_FRONTEND_URL \}\}/,
   );
   assert.match(workflow, /MONITOR_API_URL: \$\{\{ vars.MONITOR_API_URL \}\}/);
+  assert.match(workflow, /run: node scripts\/monitor-production.mjs\s*$/m);
+  assert.doesNotMatch(workflow, /run: node scripts\/monitor-production.mjs --check-only/);
+  assert.match(workflow, /GITHUB_TOKEN: \$\{\{ github.token \}\}/);
+  assert.match(workflow, /vars.ENABLE_EXTERNAL_MONITOR == 'true'/);
   assert.match(
     workflow,
     /MONITOR_MAX_LATENCY_MS: \$\{\{ vars.MONITOR_MAX_LATENCY_MS \}\}/,

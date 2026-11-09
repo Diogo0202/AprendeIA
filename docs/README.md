@@ -4,6 +4,9 @@ Este diretório reúne a visão geral e a explicação de cada área. A revisão
 
 ## Comece por aqui
 
+- [Checklist da entrega 1109](CHECKLIST_ENTREGA1109.md): implementação por agentes, evidências locais e bloqueios externos.
+- [Inventário de fornecedores](INVENTARIO_FORNECEDORES.md): operadores ativos e previstos, retenção e comprovações pendentes.
+- [Procedimento de menores](PROCEDIMENTO_MENORES.md): proposta operacional sujeita à aprovação institucional.
 - [Projeto](PROJETO.md) — objetivo, arquitetura, perfis e estado atual.
 - [Status dos requisitos funcionais](STATUS_REQUISITOS_FUNCIONAIS.md) — varredura do código, percentuais por requisito e pendências verificadas.
 - [Pedidos de privacidade](PEDIDOS_DE_PRIVACIDADE.md): fluxo do titular, revisão e execução do RF-08.

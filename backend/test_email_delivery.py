@@ -7,7 +7,7 @@ import subprocess
 from datetime import datetime, timezone
 from types import SimpleNamespace
 import unittest
-from unittest.mock import Mock, patch
+from unittest.mock import MagicMock, Mock, patch
 
 from backend import email_delivery as delivery
 
@@ -68,6 +68,81 @@ class SMTPTests(unittest.TestCase):
         for env in ({}, {'SMTP_USE_SSL': 'garbage'}):
             with self.assertRaises(ValueError):
                 delivery.SMTPConfig.from_env(env)
+
+
+class ResendTests(unittest.TestCase):
+    def test_transport_configuration_defaults_to_smtp_and_selects_resend(self):
+        transport, config = delivery.email_config_from_env({'SMTP_HOST':'smtp.test','SMTP_USERNAME':'u','SMTP_PASSWORD':'p','SMTP_FROM':'smtp@example.test'})
+        self.assertEqual(transport, 'smtp')
+        self.assertIsInstance(config, delivery.SMTPConfig)
+        transport, config = delivery.email_config_from_env({'EMAIL_TRANSPORT':'resend','RESEND_API_KEY':'key-secret','EMAIL_FROM':'sender@example.test'})
+        self.assertEqual(transport, 'resend')
+        self.assertIsInstance(config, delivery.ResendConfig)
+        with self.assertRaisesRegex(ValueError, 'EMAIL_TRANSPORT'):
+            delivery.email_config_from_env({'EMAIL_TRANSPORT':'other'})
+
+    def test_https_request_uses_fixed_endpoint_key_and_delivery_idempotency(self):
+        response = MagicMock()
+        response.status = 200
+        response.read.return_value = b'{"id":"email-id"}'
+        response.__enter__.return_value = response
+        opener = Mock()
+        opener.open.return_value = response
+        with patch.object(delivery, 'build_opener', return_value=opener) as build_opener:
+            result = delivery.send_resend(delivery.ResendConfig('re_secret','sender@example.test'), 'teacher@example.test', 'Aviso', 'Texto', 'ledger-uuid')
+        request = opener.open.call_args.args[0]
+        self.assertEqual(request.full_url, 'https://api.resend.com/emails')
+        self.assertEqual(request.get_header('Authorization'), 'Bearer re_secret')
+        self.assertEqual(request.get_header('Idempotency-key'), 'ledger-uuid')
+        self.assertEqual(result.status, 'provider_accepted')
+        self.assertEqual(opener.open.call_args.kwargs['timeout'], 15)
+        self.assertEqual(build_opener.call_args.args, (delivery._RejectRedirects,))
+
+    def test_ambiguous_transport_errors_are_unknown_and_scrubbed(self):
+        opener = Mock()
+        opener.open.side_effect = TimeoutError('key-secret teacher@example.test')
+        with patch.object(delivery, 'build_opener', return_value=opener):
+            result = delivery.send_resend(delivery.ResendConfig('key-secret','sender@example.test'), 'teacher@example.test', 'x', 'x', 'id')
+        self.assertEqual(result, delivery.SMTPResult('unknown', False, 'resend_connection'))
+        self.assertNotIn('key-secret', str(result))
+
+    def test_http_rejections_are_bounded_by_status_class(self):
+        for status, expected, retryable in ((429,'failed',True),(401,'failed',False),(422,'failed',False),(503,'unknown',False),(302,'failed',False)):
+            error = delivery.HTTPError(delivery.RESEND_ENDPOINT, status, 'private body', {}, None)
+            error.read = Mock(return_value=b'x' * (delivery.RESPONSE_LIMIT + 10))
+            opener = Mock()
+            opener.open.side_effect = error
+            with patch.object(delivery, 'build_opener', return_value=opener):
+                result = delivery.send_resend(delivery.ResendConfig('key','sender@example.test'), 'teacher@example.test', 'x', 'x', 'id')
+            self.assertEqual((result.status,result.retryable), (expected,retryable))
+            self.assertNotIn('private body', str(result))
+
+    def test_success_requires_bounded_json_receipt_id(self):
+        for body in (b'', b'{invalid', b'{"id":""}', b'{"id":null}', b'x' * (delivery.RESPONSE_LIMIT + 1)):
+            response = MagicMock()
+            response.status = 200
+            response.read.return_value = body
+            response.__enter__.return_value = response
+            opener = Mock()
+            opener.open.return_value = response
+            with patch.object(delivery, 'build_opener', return_value=opener):
+                result = delivery.send_resend(delivery.ResendConfig('key','sender@example.test'), 'teacher@example.test', 'x', 'x', 'id')
+            self.assertEqual(result, delivery.SMTPResult('unknown', False, 'resend_connection'))
+
+    def test_redirect_handler_refuses_new_hosts(self):
+        handler = delivery._RejectRedirects()
+        request = delivery.Request(delivery.RESEND_ENDPOINT, headers={'Authorization':'Bearer secret'})
+        self.assertIsNone(handler.redirect_request(request, Mock(), 302, 'Found', {}, 'https://attacker.example/'))
+
+    def test_ledger_dispatch_keeps_provider_acceptance_distinct(self):
+        db=Mock()
+        db.rpc.return_value.execute.side_effect=[SimpleNamespace(data=[{'id':'delivery-uuid','claim_token':'token','recipient':'teacher@example.test','claimed':True}]),SimpleNamespace(data=True),SimpleNamespace(data=True)]
+        config=delivery.ResendConfig('key','sender@example.test')
+        with patch.object(delivery, 'send_resend', return_value=delivery.SMTPResult('provider_accepted')) as send:
+            result=delivery.deliver(db,teacher_id='teacher',subject_id='subject',kind='weekly',panel_url=PANEL,config=config,now=NOW)
+        self.assertEqual(result,'provider_accepted')
+        self.assertEqual(db.rpc.call_args_list[-1].args[1]['p_status'],'provider_accepted')
+        send.assert_called_once()
 
     def test_sao_paulo_boundary_and_previous_completed_week(self):
         self.assertEqual(delivery.local_period('weekly', NOW), ('2026-11-02', '2026-11-09'))
@@ -139,7 +214,7 @@ const teacher = 'b0000000-0000-0000-0000-000000000001';
 const teacher2 = 'b0000000-0000-0000-0000-000000000002';
 for (const id of [teacher,teacher2]) {
   await db.query(`insert into auth.users(id,email,raw_app_meta_data) values ($1,'teacher@example.test','{"account_origin":"admin_provisioned"}')`, [id]);
-  await db.query(`update public.profiles set role='teacher', registration_status='active' where id=$1`, [id]);
+  await db.query(`update public.profiles set role='teacher', registration_status='active', age_band='adult' where id=$1`, [id]);
 }
 const subjects = (await db.query('select id from public.subjects order by id')).rows;
 const subject = subjects[0].id;
@@ -167,6 +242,14 @@ assert.equal((await claim(teacher2,subject2)).status,'smtp_accepted');
 assert.equal((await db.query('select received_at from public.email_deliveries where id=$1',[b.id])).rows[0].received_at,null);
 assert.equal(await finish(b,'failed'),false);
 await assert.rejects(db.query(`update public.email_deliveries set status='received' where id=$1`,[b.id]));
+const provider=await claim(teacher2,subject2,'weekly','2026-11-09','2026-11-16');
+assert.equal(await begin(provider),true);
+assert.equal(await finish(provider,'provider_accepted'),true);
+const providerRow=(await db.query('select status,smtp_accepted_at,provider_accepted_at from public.email_deliveries where id=$1',[provider.id])).rows[0];
+assert.equal(providerRow.status,'provider_accepted');
+assert.equal(providerRow.smtp_accepted_at,null);
+assert.ok(providerRow.provider_accepted_at);
+assert.equal((await claim(teacher2,subject2,'weekly','2026-11-09','2026-11-16')).status,'provider_accepted');
 const c=await claim(teacher,subject,'immediate','2026-11-09','2026-11-10');
 await db.query(`update public.email_deliveries set lease_until=now()-interval '1 minute' where id=$1`,[c.id]);
 const c2=await claim(teacher,subject,'immediate','2026-11-09','2026-11-10');

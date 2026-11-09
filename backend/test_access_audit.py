@@ -236,8 +236,8 @@ class AccessAuditTests(unittest.TestCase):
         root = Path(__file__).resolve().parents[1]
         policy = (root / "docs" / "POLITICA_DE_PRIVACIDADE.md").read_text(encoding="utf-8")
         dialog = (root / "frontend" / "src" / "components" / "PrivacyPolicyAccess.tsx").read_text(encoding="utf-8")
-        self.assertIn("**Versão:** 1.6", policy)
-        self.assertIn("PRIVACY_POLICY_VERSION = '1.6'", dialog)
+        self.assertIn("**Versão:** 1.7", policy)
+        self.assertIn("PRIVACY_POLICY_VERSION = '1.7'", dialog)
 
     def test_policy_v1_5_covers_admin_panel_and_ranking_visibility(self):
         root = Path(__file__).resolve().parents[1]
@@ -274,15 +274,15 @@ class AccessAuditTests(unittest.TestCase):
     def test_privacy_accept_endpoint_and_version_validation(self):
         endpoint = next(route for route in app.routes if route.path == "/privacy/accept")
         self.assertIn("POST", endpoint.methods)
-        accepted = PrivacyPolicyAccept(policy_version="1.6", terms_version="1.0")
-        self.assertEqual((accepted.policy_version, accepted.terms_version), ("1.6", "1.0"))
+        accepted = PrivacyPolicyAccept(policy_version="1.7", terms_version="1.0")
+        self.assertEqual((accepted.policy_version, accepted.terms_version), ("1.7", "1.0"))
         for old_version in ("1.0", "1.1", "1.2", "1.3", "1.4", "1.5"):
             with self.subTest(version=old_version), self.assertRaises(Exception):
                 PrivacyPolicyAccept(policy_version=old_version, terms_version="1.0")
         # Os termos são obrigatórios e só a versão vigente é aceita.
         for terms in (None, "0.9", "1.1"):
             with self.subTest(terms=terms), self.assertRaises(Exception):
-                PrivacyPolicyAccept(policy_version="1.6", terms_version=terms)
+                PrivacyPolicyAccept(policy_version="1.7", terms_version=terms)
         with self.assertRaises(Exception):
             PrivacyPolicyAccept(policy_version="1.5")
 

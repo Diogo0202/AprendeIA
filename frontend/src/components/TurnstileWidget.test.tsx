@@ -77,6 +77,22 @@ describe('TurnstileWidget', () => {
     expect(submit.mock.results[1].value).toBe('fresh-token');
   });
 
+  it.each(['login', 'signup', 'recovery'] as const)(
+    'consome um único token e reinicia o desafio na ação %s',
+    async (action) => {
+      const view = render(<Form action={action} />);
+      await waitFor(() => expect(window.turnstile!.render).toHaveBeenCalled());
+      expect(options.action).toBe(action);
+      callback('callback', `${action}-token`);
+      fireEvent.submit(screen.getByRole('button').closest('form')!);
+      await waitFor(() => expect(reset).toHaveBeenCalledWith('widget-1'));
+      expect(new FormData(screen.getByRole('button').closest('form')!).get('captcha_token')).toBe(
+        '',
+      );
+      view.unmount();
+    },
+  );
+
   it.each(['expired-callback', 'timeout-callback', 'error-callback'])(
     'limpa o token ao receber %s',
     async (name) => {

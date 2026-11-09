@@ -4,9 +4,9 @@ import { pathToFileURL } from "node:url";
 const ROUTE = "/internal/weekly-difficulty-summary";
 
 export function readConfig(env) {
-  const base = (env.WEEKLY_SUMMARY_API_URL || env.MONITOR_API_URL || "").trim();
+  const base = (env.WEEKLY_SUMMARY_API_URL || "").trim();
   const secret = (env.WEEKLY_SUMMARY_CRON_SECRET || "").trim();
-  if (!base) throw new Error("Defina WEEKLY_SUMMARY_API_URL (ou MONITOR_API_URL).");
+  if (!base) throw new Error("Defina WEEKLY_SUMMARY_API_URL.");
   if (!secret) throw new Error("Defina WEEKLY_SUMMARY_CRON_SECRET.");
   let url;
   try { url = new URL(base); } catch { throw new Error("WEEKLY_SUMMARY_API_URL inválida."); }
@@ -19,15 +19,15 @@ export function readConfig(env) {
   return { endpoint: url.toString(), secret };
 }
 
-const fields = ["smtp_accepted", "received", "teachers_skipped", "failed_deliveries", "unknown_deliveries", "processing_deliveries"];
+const fields = ["smtp_accepted", "provider_accepted", "received", "teachers_skipped", "failed_deliveries", "unknown_deliveries", "processing_deliveries"];
 export function interpret(status, body) {
   const counts = Object.fromEntries(fields.map((key) => [key, body?.[key]]));
   const valid = fields.every((key) => Number.isSafeInteger(counts[key]) && counts[key] >= 0);
-  const success = ["smtp_accepted", "no_deliveries"].includes(body?.status);
+  const success = ["smtp_accepted", "provider_accepted", "no_deliveries"].includes(body?.status);
   const ok = status === 200 && valid && success && counts.failed_deliveries === 0 && counts.unknown_deliveries === 0 && counts.processing_deliveries === 0;
   // Nunca ecoa detail/status arbitrário recebido pela rede.
   const outcome = status !== 200 ? `http_${Number.isInteger(status) ? status : 0}` :
-    !valid ? "invalid_response" : ["smtp_accepted", "no_deliveries", "failed", "unknown", "processing"].includes(body?.status) ? body.status : "invalid_response";
+    !valid ? "invalid_response" : ["smtp_accepted", "provider_accepted", "no_deliveries", "failed", "unknown", "processing"].includes(body?.status) ? body.status : "invalid_response";
   return { ok, outcome, ...Object.fromEntries(fields.map((key) => [key, valid ? counts[key] : 0])) };
 }
 
@@ -48,6 +48,7 @@ export function report(result) {
   return ["## Resumo semanal de dificuldades", "",
     `- Resultado: ${result.outcome}`,
     `- Aceitos pelo SMTP: ${result.smtp_accepted}`,
+    `- Aceitos pelo provedor HTTPS: ${result.provider_accepted}`,
     `- Recebimentos confirmados externamente: ${result.received}`,
     `- Professores que desligaram o resumo: ${result.teachers_skipped}`,
     `- Falhas: ${result.failed_deliveries}`,

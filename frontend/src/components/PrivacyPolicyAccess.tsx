@@ -1,6 +1,6 @@
 import { useEffect, useId, useRef, useState } from 'react';
 
-export const PRIVACY_POLICY_VERSION = '1.6';
+export const PRIVACY_POLICY_VERSION = '1.7';
 
 /** O navegador também valida o campo; o backend repete a exigência no cadastro. */
 export function PrivacyConsentCheckbox({
@@ -62,7 +62,7 @@ export function PrivacyPolicyAccess({ label = 'Política de Privacidade' }: { la
       >
         <div className="privacy-policy-heading">
           <div>
-            <p className="eyebrow">VERSÃO {PRIVACY_POLICY_VERSION} · 04/11/2026</p>
+            <p className="eyebrow">VERSÃO {PRIVACY_POLICY_VERSION} · 09/11/2026</p>
             <h2 id={titleId}>Política de Privacidade do AprendeIA</h2>
           </div>
           <button
@@ -138,9 +138,11 @@ export function PrivacyPolicyContent() {
         não têm conversa direta.
       </p>
       <p>
-        Resumos semanais por e-mail podem incluir nome do estudante, disciplina, tópico, percentual
-        de acertos e tentativas. Cada professor recebe apenas o resumo da disciplina sob sua
-        responsabilidade.
+        Os e-mails de alerta e resumo semanal contêm um aviso e um link para o painel autenticado,
+        sem nomes de alunos ou métricas individuais. Cada professor recebe apenas notificações da
+        disciplina sob sua responsabilidade. O Gmail SMTP atende à recuperação de senha; o Resend
+        HTTPS está preparado para notificações docentes. Vercel e Railway são os destinos previstos
+        de hospedagem. Fornecedores só ficam ativos após configuração e verificação.
       </p>
       <h3>5. Segurança e registros</h3>
       <p>
@@ -154,9 +156,11 @@ export function PrivacyPolicyContent() {
         removidos. Para não bloquear o uso após esse prazo, o perfil conserva somente a versão
         atualmente aceita; o horário do aceite é removido em até 7 dias. Contas student e teacher
         expiram 168 horas após a criação da conta; admin é isento. Login e nova ciência da política
-        não reiniciam esse prazo. Expiração de acesso não comprova exclusão dos dados. Prazos de
-        dados acadêmicos e cópias de segurança dependem de confirmação da instituição. Não há
-        garantia de remoção imediata de backups ou de dados mantidos por fornecedores.
+        não reiniciam esse prazo. O prazo acadêmico definido acompanha as 168 horas da conta. A
+        limpeza automática das contas ainda está desativada, portanto o prazo de acesso não comprova
+        exclusão. Até a validação do executor, a instituição precisa atender à remoção assistida.
+        Prazos de cópias de segurança dependem de confirmação. Não há garantia de remoção imediata
+        de backups ou de dados mantidos por fornecedores.
       </p>
       <h3>7. Direitos e solicitações</h3>
       <p>
@@ -208,12 +212,12 @@ export function PrivacyPolicyContent() {
         tratar dados técnicos conforme suas configurações.
       </p>
       <p>
-        A política 1.6 limita a medição opcional à página pública /sobre: Google Analytics 4 (GA4)
-        para estatísticas de navegação e Microsoft Clarity para gravação de sessões (session
-        replay). São duas escolhas independentes, ambas desligadas por padrão, ativadas apenas por
-        consentimento específico para cada ferramenta. Recusar ambas permite continuar navegando.
-        Essas ferramentas podem tratar identificadores e dados de navegação; mascaramento não
-        garante ausência de dados pessoais.
+        A política {PRIVACY_POLICY_VERSION} limita a medição opcional à página pública /sobre:
+        Google Analytics 4 (GA4) para estatísticas de navegação e Microsoft Clarity para gravação de
+        sessões (session replay). São duas escolhas independentes, ambas desligadas por padrão,
+        ativadas apenas por consentimento específico para cada ferramenta. Recusar ambas permite
+        continuar navegando. Essas ferramentas podem tratar identificadores e dados de navegação;
+        mascaramento não garante ausência de dados pessoais.
       </p>
       <p>
         A escolha de cookies opcionais vale por 7 dias no navegador. Após esse prazo, as ferramentas
@@ -241,7 +245,7 @@ export function PrivacyPolicyContent() {
         concordância do próprio titular.
       </p>
       <p className="privacy-policy-review-note">
-        A lista de fornecedores ativos, os prazos de dados acadêmicos e backups e as condições
+        A lista de fornecedores ativos, a execução da limpeza, os prazos de backups e as condições
         contratuais ainda dependem de confirmação antes do uso público. store=false não garante
         retenção zero no fornecedor. O aceite da versão {PRIVACY_POLICY_VERSION} não substitui a
         admissão de menores.

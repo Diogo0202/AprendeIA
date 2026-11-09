@@ -16,12 +16,13 @@ concurrency:
 
 jobs:
   summary:
+    if: vars.ENABLE_WEEKLY_SUMMARY == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
       - uses: actions/checkout@v4
         with:
-          ref: ${{ github.event.repository.default_branch }}
+          ref: main
           persist-credentials: false
       - uses: actions/setup-node@v4
         with:
@@ -31,6 +32,5 @@ jobs:
       - name: Disparar resumo semanal
         env:
           WEEKLY_SUMMARY_API_URL: ${{ vars.WEEKLY_SUMMARY_API_URL }}
-          MONITOR_API_URL: ${{ vars.MONITOR_API_URL }}
           WEEKLY_SUMMARY_CRON_SECRET: ${{ secrets.WEEKLY_SUMMARY_CRON_SECRET }}
         run: node scripts/trigger-weekly-summary.mjs

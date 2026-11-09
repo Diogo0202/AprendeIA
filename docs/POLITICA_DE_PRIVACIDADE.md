@@ -1,8 +1,10 @@
 # Política de Privacidade do AprendeIA
 
-**Versão:** 1.6
-**Data desta versão:** 04/11/2026
-**Status:** política 1.6 implementada localmente para a Escola Diogo Mendes teste. A migration `20261109110000_privacy_policy_v1_6.sql` preserva os Termos de Uso 1.0. Backend alinhado à 1.6; cookies e `/sobre` testados localmente com provedores interceptados. Aplicação remota e verificação dos fornecedores reais pendentes. Evidências em `PRIVACIDADE_COOKIES_ACESSIBILIDADE.md`.
+**Versão:** 1.7
+**Data desta versão:** 09/11/2026
+**Status:** política atualizada para a Escola Diogo Mendes teste. A migration `20261109140000_privacy_policy_v1_7.sql` exige nova ciência e preserva os Termos de Uso 1.0. Publicação do frontend e validação de fornecedores reais continuam pendentes.
+
+**Mudança da 1.7:** define o prazo acadêmico de 168 horas, informa que a limpeza automática de contas ainda está desativada, corrige a descrição dos e-mails para aviso sem métricas individuais e identifica os operadores previstos para a publicação. Isso não confirma sua ativação nem seus prazos externos.
 
 **Regras vigentes:** contas student e teacher expiram 168 horas após a criação original; admin é isento. Login e nova ciência não reiniciam o prazo. Menores precisam de admissão administrativa verificável antes dos recursos. Enviar e-mail ou confirmar a leitura da política não comprova aprovação.
 
@@ -48,8 +50,8 @@ As respostas e indicadores acadêmicos podem apoiar a geração de questões, ex
 - Estudantes acessam seu próprio perfil, aulas, resultados e recomendações.
 - Professores acessam dados pedagógicos dos estudantes vinculados às suas turmas e à sua disciplina, sem editar resultados do estudante.
 - Administradores gerenciam contas e configurações operacionais conforme as permissões do sistema. Também veem a lista de professores e turmas, o desempenho agregado por turma e professor (sem dados individuais de estudantes), os registros de auditoria dos últimos 7 dias e trocam mensagens diretas com professores.
-- Os resumos semanais enviados por e-mail ao professor responsável pela disciplina podem conter nome do estudante, tópico, percentual de acertos e quantidade de tentativas. O envio deve respeitar a separação por disciplina implementada pelo sistema.
-- Supabase, OpenAI, SMTP e provedores de hospedagem ou observabilidade podem processar dados conforme os recursos habilitados, a configuração publicada e os contratos aplicáveis. A instituição deve confirmar a lista de fornecedores ativos antes da publicação.
+- Alertas e resumos enviados por e-mail contêm um aviso e um link para o painel autenticado, sem nome de aluno ou métricas individuais. O destinatário continua limitado ao professor da disciplina.
+- Supabase mantém Auth, banco e Storage. OpenAI atende à IA quando configurada. Gmail SMTP foi escolhido para recuperação de senha; Resend HTTPS para notificações docentes; Vercel e Railway para a publicação. Estes últimos são destinos previstos, sem comprovação de ativação nesta revisão. Cloudflare Turnstile verifica os formulários quando configurado. O [inventário operacional](INVENTARIO_FORNECEDORES.md) separa serviços ativos, previstos e pendências. GA4 e Clarity permanecem desligados.
 
 ## 5. Segurança e auditoria
 
@@ -57,7 +59,7 @@ O AprendeIA aplica controle de acesso por função, validação no backend, prot
 
 ## 6. Retenção
 
-O prazo operacional previsto para logs de acesso e evidências detalhadas de aceite é de **7 dias**. A execução das rotinas de remoção precisa ser confirmada no ambiente publicado. O perfil mantém somente a versão da política atualmente aceita para permitir o controle de acesso; o horário detalhado do aceite também é removido em até 7 dias. Contas `student` e `teacher` expiram **168 horas após a criação original da conta**; `admin` é isento. Login e novo aceite não reiniciam o prazo. Expiração de acesso não comprova exclusão dos dados. A instituição ainda precisa definir o prazo acadêmico. Backups, réplicas e registros dos fornecedores podem seguir ciclos próprios; não há promessa de remoção imediata dessas cópias. A instituição precisa confirmar os fornecedores ativos e seus prazos contratuais. `store=false` não garante retenção zero no fornecedor.
+O prazo operacional previsto para logs de acesso e evidências detalhadas de aceite é de **7 dias**. A execução das rotinas de remoção precisa ser confirmada no ambiente publicado. O perfil mantém somente a versão da política atualmente aceita para permitir o controle de acesso; o horário detalhado do aceite também é removido em até 7 dias. Contas `student` e `teacher` expiram **168 horas após a criação original da conta**; `admin` é isento. Login e novo aceite não reiniciam o prazo. Expiração de acesso não comprova exclusão dos dados. O prazo acadêmico definido acompanha as 168 horas da conta. A limpeza automática de contas está desativada até a validação do executor, portanto o bloqueio de acesso não comprova exclusão. A instituição precisa atender à remoção assistida nesse intervalo. Backups, réplicas e registros dos fornecedores podem seguir ciclos próprios; não há promessa de remoção imediata dessas cópias. A instituição precisa confirmar os fornecedores ativos e seus prazos contratuais. `store=false` não garante retenção zero no fornecedor.
 
 ## 7. Direitos dos titulares
 

@@ -39,8 +39,8 @@ async function check(name, operation) {
 const signupBody = (await db.query(`select pg_get_functiondef('private.handle_new_user()'::regprocedure) as body`)).rows[0].body;
 const policyVersion = signupBody.match(/policy_version_value (?:<>|=) '(\d+\.\d+)'/)[1];
 const termsVersion = signupBody.match(/terms_version_value = '(\d+\.\d+)'/)[1];
-await check('cadastro vigente exige política 1.6 e preserva os Termos de Uso 1.0', async () => {
-  assert.equal(policyVersion, '1.6');
+await check('cadastro vigente exige política 1.7 e preserva os Termos de Uso 1.0', async () => {
+  assert.equal(policyVersion, '1.7');
   assert.equal(termsVersion, '1.0');
 });
 function consent(extra = {}) {

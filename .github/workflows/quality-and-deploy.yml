@@ -2,8 +2,9 @@ name: Qualidade e deploy
 
 on:
   pull_request:
+    branches: [main, entrega-2809, entrega1109]
   push:
-    branches: [main, entrega-2809]
+    branches: [main, entrega-2809, entrega1109]
 
 permissions:
   contents: read
@@ -39,6 +40,7 @@ jobs:
         working-directory: frontend
       - run: node --test scripts/monitor-production.test.mjs
       - run: node --test scripts/trigger-weekly-summary.test.mjs
+      - run: node --test scripts/verify-deployment.test.mjs
 
   privacy-database:
     runs-on: ubuntu-latest
@@ -71,15 +73,44 @@ jobs:
       - run: npm run test:e2e
         working-directory: frontend
 
-  deploy:
-    if: github.event_name == 'push'
+  pr-checks:
+    if: always()
     runs-on: ubuntu-latest
     needs: [backend, frontend, e2e, privacy-database]
     steps:
-      - name: Acionar Railway somente quando os hooks existirem
+      - name: Exigir sucesso dos checks da PR
         env:
-          RAILWAY_BACKEND_DEPLOY_HOOK: ${{ secrets.RAILWAY_BACKEND_DEPLOY_HOOK }}
-          RAILWAY_FRONTEND_DEPLOY_HOOK: ${{ secrets.RAILWAY_FRONTEND_DEPLOY_HOOK }}
+          BACKEND: ${{ needs.backend.result }}
+          FRONTEND: ${{ needs.frontend.result }}
+          E2E: ${{ needs.e2e.result }}
+          PRIVACY_DATABASE: ${{ needs.privacy-database.result }}
         run: |
-          if [ -n "$RAILWAY_BACKEND_DEPLOY_HOOK" ]; then curl --fail --silent --show-error --request POST "$RAILWAY_BACKEND_DEPLOY_HOOK"; else echo "Hook do backend não configurado."; fi
-          if [ -n "$RAILWAY_FRONTEND_DEPLOY_HOOK" ]; then curl --fail --silent --show-error --request POST "$RAILWAY_FRONTEND_DEPLOY_HOOK"; else echo "Hook do frontend não configurado."; fi
+          test "$BACKEND" = success
+          test "$FRONTEND" = success
+          test "$E2E" = success
+          test "$PRIVACY_DATABASE" = success
+
+  deploy:
+    timeout-minutes: 20
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    needs: pr-checks
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+      - name: Testar verificador sem chamadas externas
+        run: node --test scripts/verify-deployment.test.mjs
+      - name: Conferir deploy terminal do SHA em Vercel e Railway
+        env:
+          EXPECTED_SHA: ${{ github.sha }}
+          VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
+          VERCEL_PROJECT_ID: ${{ vars.VERCEL_PROJECT_ID }}
+          VERCEL_PRODUCTION_DOMAIN: ${{ vars.VERCEL_PRODUCTION_DOMAIN }}
+          VERCEL_TEAM_ID: ${{ vars.VERCEL_TEAM_ID }}
+          RAILWAY_TOKEN: ${{ secrets.RAILWAY_TOKEN }}
+          RAILWAY_BACKEND_SERVICE_ID: ${{ vars.RAILWAY_BACKEND_SERVICE_ID }}
+          RAILWAY_ENVIRONMENT_ID: ${{ vars.RAILWAY_ENVIRONMENT_ID }}
+          DEPLOYMENT_WAIT_MS: "900000"
+        run: node scripts/verify-deployment.mjs

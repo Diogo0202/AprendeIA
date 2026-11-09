@@ -46,6 +46,7 @@ from auth_security import (
 )
 from captcha import CaptchaError, CaptchaUnavailable, captcha_configured, captcha_mode, captcha_required, verify_turnstile
 from communication_rules import can_start_direct_conversation, validate_message_body
+from deployment_config import frontend_origin
 from difficulty_alerts import (
     build_immediate_email,
     build_weekly_email,
@@ -91,7 +92,7 @@ async def lifespan(_app: FastAPI):
 app = FastAPI(title="aprendeIA API", version="0.3.0", docs_url=None, redoc_url=None, openapi_url=None, lifespan=lifespan)
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=[os.getenv("FRONTEND_URL", "http://localhost:5173")],
+    allow_origins=[frontend_origin(os.environ)],
     allow_credentials=True,
     allow_methods=["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
     allow_headers=["Authorization", "Content-Type", "X-Request-ID"],
@@ -303,7 +304,7 @@ class UserCreate(BaseModel):
 class PrivacyPolicyAccept(BaseModel):
     """A pessoa declara as versões que leu; o backend define a hora do aceite."""
 
-    policy_version: Literal["1.6"]
+    policy_version: Literal["1.7"]
     terms_version: Literal["1.0"]
 
 
@@ -696,15 +697,19 @@ def authenticate_with_password(credentials: LoginRequest):
     return client.auth.sign_in_with_password(payload)
 
 
-def smtp_configured() -> bool:
-    """Confere o mínimo para envio sem revelar a configuração em respostas."""
+def email_configured() -> bool:
+    """Confere o transporte selecionado, sem exigir SMTP quando o envio é HTTPS."""
+    from email_delivery import email_config_from_env
 
-    required = ("SMTP_HOST", "SMTP_USERNAME", "SMTP_PASSWORD", "SMTP_FROM")
-    return all(os.getenv(name) for name in required)
+    try:
+        email_config_from_env()
+    except (ValueError, UnicodeError):
+        return False
+    return True
 
 
 def send_smtp_email(*, db: Client, teacher_id: str, subject_id: str) -> str:
-    """Envia pelo ledger RF22; o retorno não comprova recebimento."""
+    """Nome legado: o ledger RF22 seleciona SMTP ou Resend e não comprova recebimento."""
     from email_delivery import deliver_immediate
 
     return deliver_immediate(
@@ -764,7 +769,7 @@ def authenticated_profile(
             request.state.audit_actor_id = profile["id"]
             request.state.audit_actor_role = profile["role"]
         if require_privacy_consent and (
-            profile.get("privacy_policy_version") != "1.6" or profile.get("terms_of_use_version") != "1.0"
+            profile.get("privacy_policy_version") != "1.7" or profile.get("terms_of_use_version") != "1.0"
         ):
             raise HTTPException(
                 status_code=428,
@@ -1272,12 +1277,19 @@ def readiness():
     if captcha_required() and not captcha_configured():
         raise HTTPException(status_code=503, detail="Verificação de segurança não configurada.")
     try:
-        # Esta consulta também confirma que a migration da jornada foi aplicada.
-        database().table("diagnostic_sessions").select("id").limit(1).execute()
-        database().table("access_audit_logs").select("id").limit(1).execute()
-        database().table("conversations").select("id").limit(1).execute()
-        database().table("privacy_policy_acceptances").select("id").limit(1).execute()
-        database().table("privacy_requests").select("id").limit(1).execute()
+        # Limite zero valida o contrato das áreas novas sem ler dados dos titulares.
+        db = database()
+        required_tables = {
+            "diagnostic_sessions": "id", "access_audit_logs": "id",
+            "conversations": "id", "privacy_policy_acceptances": "id,terms_version",
+            "privacy_requests": "id", "account_admissions": "id",
+            "email_deliveries": "id,provider_accepted_at",
+            "gamification_events": "student_id", "student_achievements": "student_id",
+            "leaderboard_preferences": "student_id",
+            "profiles": "id,auth_created_at,account_expires_at,terms_of_use_version",
+        }
+        for table, columns in required_tables.items():
+            db.table(table).select(columns).limit(0).execute()
     except Exception as error:
         raise HTTPException(status_code=503, detail="Banco de dados ainda não está pronto.") from error
     return {
