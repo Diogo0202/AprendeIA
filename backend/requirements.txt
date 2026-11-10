@@ -7,3 +7,5 @@ pydantic==2.13.5
 openai==3.8.0
 python-dotenv==1.2.3
 supabase==2.31.0
+# Base de fusos para ZoneInfo("America/Sao_Paulo") onde o sistema não traz uma (Windows).
+tzdata==2025.2

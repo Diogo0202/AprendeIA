@@ -13,6 +13,11 @@ window.__APP_CONFIG__ = Object.freeze({
   SUPABASE_PUBLISHABLE_KEY: "$(escape_js "${VITE_SUPABASE_PUBLISHABLE_KEY:-}")",
   API_URL: "$(escape_js "${VITE_API_URL:-}")",
   ENABLE_CLARITY: "$(escape_js "${VITE_ENABLE_CLARITY:-false}")",
-  CLARITY_PROJECT_ID: "$(escape_js "${VITE_CLARITY_PROJECT_ID:-}")"
+  CLARITY_PROJECT_ID: "$(escape_js "${VITE_CLARITY_PROJECT_ID:-}")",
+  CLARITY_PRIVACY_APPROVED: "$(escape_js "${VITE_CLARITY_PRIVACY_APPROVED:-false}")",
+  ENABLE_GA4: "$(escape_js "${VITE_ENABLE_GA4:-false}")",
+  GA4_MEASUREMENT_ID: "$(escape_js "${VITE_GA4_MEASUREMENT_ID:-}")",
+  GA4_PRIVACY_APPROVED: "$(escape_js "${VITE_GA4_PRIVACY_APPROVED:-false}")",
+  TURNSTILE_SITE_KEY: "$(escape_js "${VITE_TURNSTILE_SITE_KEY:-}")"
 });
 EOF

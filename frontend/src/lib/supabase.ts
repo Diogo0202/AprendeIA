@@ -14,6 +14,9 @@ const publishableKey =
 export const apiUrl =
   runtimeConfig?.API_URL?.trim() || import.meta.env.VITE_API_URL || "http://localhost:8000";
 
+export const turnstileSiteKey =
+  runtimeConfig?.TURNSTILE_SITE_KEY?.trim() || import.meta.env.VITE_TURNSTILE_SITE_KEY?.trim() || "";
+
 // A flag mantém o protótipo funcional sem credenciais durante demonstrações.
 export const isSupabaseConfigured = Boolean(supabaseUrl && publishableKey);
 

@@ -16,12 +16,29 @@ from typing import Any
 from fastapi import HTTPException, Request
 
 
-LOGIN_MAX_FAILURES = 4
+LOGIN_MAX_FAILURES = 5
 # Uma escola pode compartilhar o mesmo IP entre várias turmas. Por isso, o
 # limite de rede é só uma segunda barreira e fica bem acima do limite da conta.
 NETWORK_MAX_FAILURES = 100
 LOGIN_WINDOW_SECONDS = 15 * 60
-LOGIN_LOCK_SECONDS = 15 * 60
+LOGIN_LOCK_SECONDS = 5 * 60
+LOGIN_MAX_LOCK_SECONDS = 24 * 60 * 60
+
+
+def password_policy_error(value: str) -> str | None:
+    """Explica a primeira regra de senha que ainda não foi atendida."""
+
+    if len(value) < 6:
+        return "A senha precisa ter pelo menos 6 caracteres."
+    if len(value) > 128:
+        return "A senha pode ter no máximo 128 caracteres."
+    if not any(character.isupper() for character in value):
+        return "A senha precisa ter pelo menos uma letra maiúscula."
+    if not any(character.islower() for character in value):
+        return "A senha precisa ter pelo menos uma letra minúscula."
+    if not any(character.isdigit() for character in value):
+        return "A senha precisa ter pelo menos um número."
+    return None
 
 
 @dataclass(frozen=True)
@@ -55,7 +72,7 @@ def rate_limit_secret() -> str:
 def rate_limit_hash(kind: str, value: str, secret: str | None = None) -> str:
     """Gera um identificador irreversível e separado para usuário ou rede."""
 
-    if kind not in {"identity", "network"}:
+    if kind not in {"identity", "network", "audit_network"}:
         raise ValueError("Tipo de identificador inválido.")
     key = (secret or rate_limit_secret()).encode("utf-8")
     message = f"aprendeia-login:{kind}:{value}".encode("utf-8")

@@ -1,0 +1,4 @@
+cd frontend
+node node_modules/lint-staged/bin/lint-staged.js
+node node_modules/typescript/bin/tsc --noEmit
+node node_modules/vitest/vitest.mjs run

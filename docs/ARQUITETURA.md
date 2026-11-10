@@ -43,7 +43,7 @@ Todas as tabelas do schema público têm RLS. O papel `anon` não recebe acesso 
 - administradora cria contas pelo FastAPI;
 - a chave secreta do Supabase existe somente no backend.
 
-O login bloqueia a conta na quarta falha por quinze minutos. O IP informado pelo proxy só é aceito quando a conexão vem de uma rede declarada em `TRUSTED_PROXY_CIDRS`.
+O login bloqueia a conta na quinta falha. A espera começa em cinco minutos e dobra a cada nova rodada de cinco erros, até 24 horas; um login correto encerra a reincidência. O IP informado pelo proxy só é aceito quando a conexão vem de uma rede declarada em `TRUSTED_PROXY_CIDRS`.
 
 ## Inteligência artificial
 
@@ -52,6 +52,12 @@ A OpenAI gera uma questão por vez usando saída estruturada. O schema exige qua
 Depois da resposta, o servidor calcula a taxa de acerto. Com pelo menos três tentativas, desempenho a partir de 80% avança para `advanced`; abaixo de 60% retorna para `basic`; os demais casos usam `intermediate`.
 
 As recomendações pedagógicas usam métricas sem nomes ou e-mails, saída JSON estruturada e `store=False`. Antes da chamada, o backend confirma professor, disciplina, turma e estudante.
+
+## Comunicação protegida
+
+As conversas humanas e o tutor de IA usam a mesma interface, mas são contextos separados. `conversation_members` define a posse da conversa; toda rota confere essa participação antes de ler mensagens. A criação direta também confirma o vínculo entre professor, disciplina e aluno dentro de uma RPC atômica.
+
+Alunos conversam apenas com seus professores e com a IA. Professores conversam com seus alunos, outros professores e a IA. O administrador não entra no módulo. A especificação completa está em `docs/COMUNICACAO_E_IA.md`.
 
 ## Modo demonstrativo
 
