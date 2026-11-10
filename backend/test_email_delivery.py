@@ -197,6 +197,16 @@ class DispatcherTests(unittest.TestCase):
         self.assertEqual(result['smtp_accepted'], 1)
         self.assertEqual(result['received'], 0)
 
+    def test_exception_for_one_teacher_does_not_stop_the_rest(self):
+        db = Mock()
+        db.rpc.return_value.execute.return_value.data = [{'teacher_id':'a','subject_id':'a'}, {'teacher_id':'b','subject_id':'b'}]
+        with patch.object(delivery, 'deliver', side_effect=[TimeoutError('rpc'), 'smtp_accepted']) as call:
+            result = delivery.run_weekly_summary(db, panel_url=PANEL, config=CONFIG, now=NOW)
+        self.assertEqual(call.call_count, 2)
+        self.assertEqual(result['status'], 'unknown')
+        self.assertEqual(result['unknown_deliveries'], 1)
+        self.assertEqual(result['smtp_accepted'], 1)
+
 
 class SQLTests(unittest.TestCase):
     def test_migrations_and_delivery_state_machine_in_postgresql(self):

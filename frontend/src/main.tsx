@@ -5,7 +5,10 @@ import App from './App';
 import { CookieConsent } from './components/CookieConsent';
 import { AboutPage } from './components/AboutPage';
 import { verifyPublicGuest } from './lib/tracking';
-import { supabase } from './lib/supabase';
+import { apiUrl, supabase } from './lib/supabase';
+import { loadLegalDocuments } from './lib/legalVersions';
+
+void loadLegalDocuments(apiUrl);
 
 const about = window.location.pathname === '/sobre';
 if (about) {

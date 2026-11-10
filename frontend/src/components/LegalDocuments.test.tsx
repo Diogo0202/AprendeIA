@@ -1,7 +1,8 @@
 import { cleanup, fireEvent, render, screen } from '@testing-library/react';
 import { afterEach, describe, expect, it } from 'vitest';
-import { LegalDocuments, TERMS_OF_USE_VERSION } from './LegalDocuments';
-import { PRIVACY_POLICY_VERSION } from './PrivacyPolicyAccess';
+import { LegalDocuments } from './LegalDocuments';
+const TERMS_OF_USE_VERSION = '1.0';
+const PRIVACY_POLICY_VERSION = '1.7';
 
 describe('Aba de termos e privacidade', () => {
   afterEach(cleanup);
@@ -13,7 +14,7 @@ describe('Aba de termos e privacidade', () => {
       'aria-pressed',
       'true',
     );
-    expect(screen.getByText(`VERSÃO ${PRIVACY_POLICY_VERSION} · 04/11/2026`)).toBeInTheDocument();
+    expect(screen.getByText(`VERSÃO ${PRIVACY_POLICY_VERSION} · 09/11/2026`)).toBeInTheDocument();
     expect(screen.getByRole('heading', { name: '8. Crianças e adolescentes' })).toBeInTheDocument();
   });
 

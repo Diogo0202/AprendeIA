@@ -72,7 +72,7 @@ def rate_limit_secret() -> str:
 def rate_limit_hash(kind: str, value: str, secret: str | None = None) -> str:
     """Gera um identificador irreversível e separado para usuário ou rede."""
 
-    if kind not in {"identity", "network"}:
+    if kind not in {"identity", "network", "audit_network"}:
         raise ValueError("Tipo de identificador inválido.")
     key = (secret or rate_limit_secret()).encode("utf-8")
     message = f"aprendeia-login:{kind}:{value}".encode("utf-8")

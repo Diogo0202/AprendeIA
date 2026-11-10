@@ -4,6 +4,7 @@ Este diretório reúne a visão geral e a explicação de cada área. A revisão
 
 ## Comece por aqui
 
+- [Correções da revisão de 10/11/2026](REVISAO_CORRECOES_2026-11-10.md): tutor, RPCs, fonte de versões legais e isolamento de perfis.
 - [Checklist da entrega 1109](CHECKLIST_ENTREGA1109.md): implementação por agentes, evidências locais e bloqueios externos.
 - [Inventário de fornecedores](INVENTARIO_FORNECEDORES.md): operadores ativos e previstos, retenção e comprovações pendentes.
 - [Procedimento de menores](PROCEDIMENTO_MENORES.md): proposta operacional sujeita à aprovação institucional.

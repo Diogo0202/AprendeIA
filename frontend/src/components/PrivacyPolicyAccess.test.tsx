@@ -4,8 +4,8 @@ import {
   PrivacyConsentCheckbox,
   PrivacyPolicyAccess,
   PrivacyPolicyContent,
-  PRIVACY_POLICY_VERSION,
 } from './PrivacyPolicyAccess';
+const PRIVACY_POLICY_VERSION = '1.7'; // Versão da fixture do servidor.
 
 describe('Política de Privacidade e consentimento', () => {
   afterEach(() => {

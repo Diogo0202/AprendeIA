@@ -30,6 +30,7 @@ from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 from email.message import EmailMessage
 from email.utils import parseaddr
+import logging
 import os
 import smtplib
 import ssl
@@ -282,8 +283,13 @@ def run_weekly_summary(db: Any, *, panel_url: str, config: SMTPConfig | ResendCo
             'p_period_start': start, 'p_period_end': end, 'p_after_subject': after,
         })
         for row in rows:
-            status = deliver(db, teacher_id=row['teacher_id'], subject_id=row['subject_id'],
-                             kind='weekly', panel_url=panel_url, config=config, now=now)
+            try:
+                status = deliver(db, teacher_id=row['teacher_id'], subject_id=row['subject_id'],
+                                 kind='weekly', panel_url=panel_url, config=config, now=now)
+            except Exception:
+                # O ledger impede reenvio; o alvo fica 'unknown' e os demais seguem.
+                logging.getLogger('aprendeia').warning('weekly_email_target_failed')
+                status = 'unknown'
             counts[status] += 1
         if len(rows) < 500:
             break

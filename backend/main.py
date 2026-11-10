@@ -47,6 +47,7 @@ from auth_security import (
 from captcha import CaptchaError, CaptchaUnavailable, captcha_configured, captcha_mode, captcha_required, verify_turnstile
 from communication_rules import can_start_direct_conversation, validate_message_body
 from deployment_config import frontend_origin
+from legal_documents import get_current_legal_documents, LegalDocumentVersionsUnavailable, validate_legal_document_version
 from difficulty_alerts import (
     build_immediate_email,
     build_weekly_email,
@@ -304,8 +305,13 @@ class UserCreate(BaseModel):
 class PrivacyPolicyAccept(BaseModel):
     """A pessoa declara as versões que leu; o backend define a hora do aceite."""
 
-    policy_version: Literal["1.7"]
-    terms_version: Literal["1.0"]
+    policy_version: str
+    terms_version: str
+
+    @field_validator("policy_version", "terms_version")
+    @classmethod
+    def legal_version_format(cls, value: str) -> str:
+        return validate_legal_document_version(value)
 
 
 class TeacherApproval(BaseModel):
@@ -759,7 +765,7 @@ def authenticated_profile(
         auth_user = db.auth.get_user(token).user
         if not auth_user:
             raise ValueError("User not found")
-        rows = db.table("profiles").select("id,email,role,full_name,grade,goal,privacy_policy_version,terms_of_use_version," + PROFILE_FIELDS).eq("id", str(auth_user.id)).limit(1).execute().data
+        rows = db.table("profiles").select("id,email,role,full_name,grade,goal,registration_status,privacy_policy_version,terms_of_use_version," + PROFILE_FIELDS).eq("id", str(auth_user.id)).limit(1).execute().data
         if not rows:
             raise ValueError("Profile not found")
         profile = rows[0]
@@ -768,14 +774,21 @@ def authenticated_profile(
             # validou JWT e cargo no banco; nada vem de cabeçalho inventado.
             request.state.audit_actor_id = profile["id"]
             request.state.audit_actor_role = profile["role"]
-        if require_privacy_consent and (
-            profile.get("privacy_policy_version") != "1.7" or profile.get("terms_of_use_version") != "1.0"
+        if require_privacy_consent and not (
+            profile.get("privacy_policy_version") and profile.get("terms_of_use_version")
         ):
             raise HTTPException(
                 status_code=428,
                 detail="Aceite os Termos de Uso e a Política de Privacidade para continuar.",
             )
         if require_privacy_consent:
+            try:
+                documents = get_current_legal_documents(db)
+            except LegalDocumentVersionsUnavailable as error:
+                raise HTTPException(503, "Versões legais indisponíveis.") from error
+            if (profile["privacy_policy_version"] != documents["privacy"]["version"]
+                    or profile["terms_of_use_version"] != documents["terms"]["version"]):
+                raise HTTPException(428, "Aceite os Termos de Uso e a Política de Privacidade para continuar.")
             check_access(profile)
         return profile
     except HTTPException:
@@ -810,6 +823,10 @@ def require_role(*roles: str):
 
         if user["role"] not in roles:
             raise HTTPException(status_code=403, detail="Você não tem permissão para esta operação.")
+        # Quem pediu para ser professor segue como estudante até a aprovação;
+        # sem esta checagem só a interface impediria o uso das rotas de aluno.
+        if user.get("registration_status", "active") != "active":
+            raise HTTPException(status_code=403, detail="Seu cadastro ainda aguarda aprovação.")
         return user
     return dependency
 
@@ -1286,6 +1303,7 @@ def readiness():
             "email_deliveries": "id,provider_accepted_at",
             "gamification_events": "student_id", "student_achievements": "student_id",
             "leaderboard_preferences": "student_id",
+            "legal_document_versions": "document_type,version,effective_at",
             "profiles": "id,auth_created_at,account_expires_at,terms_of_use_version",
         }
         for table, columns in required_tables.items():
@@ -1314,6 +1332,16 @@ def health(_user: dict = Depends(current_user)):
     }
 
 
+@app.get("/legal/versions")
+def current_legal_versions(response: Response):
+    """Metadados públicos, sem sessão nem conteúdo de contas."""
+    response.headers["Cache-Control"] = "no-store"
+    try:
+        return get_current_legal_documents(database())
+    except LegalDocumentVersionsUnavailable as error:
+        raise HTTPException(503, "Versões legais indisponíveis.") from error
+
+
 @app.post("/privacy/accept", status_code=201)
 def accept_privacy_policy(
     request: Request,
@@ -1324,14 +1352,26 @@ def accept_privacy_policy(
 
     db = database()
     enforce_api_rate_limit(db, user["id"], "privacy_accept")
-    accepted_at = db.rpc(
-        "record_privacy_policy_acceptance",
-        {
-            "target_user_id": user["id"],
-            "target_policy_version": payload.policy_version,
-            "target_terms_version": payload.terms_version,
-        },
-    ).execute().data
+    try:
+        documents = get_current_legal_documents(db)
+    except LegalDocumentVersionsUnavailable as error:
+        raise HTTPException(503, "Versões legais indisponíveis.") from error
+    if (payload.policy_version != documents["privacy"]["version"]
+            or payload.terms_version != documents["terms"]["version"]):
+        raise HTTPException(409, "Os documentos foram atualizados. Leia as versões vigentes.")
+    try:
+        accepted_at = db.rpc(
+            "record_privacy_policy_acceptance",
+            {
+                "target_user_id": user["id"],
+                "target_policy_version": payload.policy_version,
+                "target_terms_version": payload.terms_version,
+            },
+        ).execute().data
+    except Exception as error:
+        # A RPC verifica a fonte de novo: publicação concorrente não autoriza
+        # um aceite antigo, nem devolve detalhes internos do PostgreSQL.
+        raise HTTPException(503, "Não foi possível registrar o aceite. Consulte as versões vigentes.") from error
     request.state.audit_resource_id = user["id"]
     request.state.audit_metadata = {
         "policy_version": payload.policy_version,
@@ -1345,114 +1385,95 @@ def accept_privacy_policy(
     }
 
 
+def active_profiles(db: Client, role: str, ids: list[str] | None = None) -> list[dict[str, Any]]:
+    """Perfis ativos de um cargo; ids vazio devolve [] sem consultar o banco."""
+
+    if ids is not None and not ids:
+        return []
+    query = db.table("profiles").select("id,full_name,role")
+    if ids is not None:
+        query = query.in_("id", ids)
+    return query.eq("role", role).eq("registration_status", "active").execute().data
+
+
+def student_contacts(db: Client, user: dict[str, Any]) -> dict[str, dict[str, Any]]:
+    """Aluno conversa com os professores das disciplinas em que está matriculado."""
+
+    enrollments = (
+        db.table("enrollments")
+        .select("subject_id,subjects(name)")
+        .eq("student_id", user["id"])
+        .execute()
+        .data
+    )
+    subject_ids = [row["subject_id"] for row in enrollments]
+    subject_names = {
+        row["subject_id"]: (row.get("subjects") or {}).get("name", "Disciplina")
+        for row in enrollments
+    }
+    assignments = (
+        db.table("teacher_subjects")
+        .select("teacher_id,subject_id")
+        .in_("subject_id", subject_ids)
+        .execute()
+        .data
+        if subject_ids
+        else []
+    )
+    teacher_ids = list({row["teacher_id"] for row in assignments})
+    teachers_by_id = {profile["id"]: profile for profile in active_profiles(db, "teacher", teacher_ids)}
+    contacts: dict[str, dict[str, Any]] = {}
+    for assignment in assignments:
+        profile = teachers_by_id.get(assignment["teacher_id"])
+        if profile:
+            contacts[profile["id"]] = {
+                **profile,
+                "context": subject_names.get(assignment["subject_id"], "Disciplina"),
+            }
+    return contacts
+
+
+def admin_contacts(db: Client) -> dict[str, dict[str, Any]]:
+    """A administração conversa só com professores ativos, nunca com alunos."""
+
+    return {profile["id"]: {**profile, "context": "Professor"} for profile in active_profiles(db, "teacher")}
+
+
+def teacher_contacts(db: Client, user: dict[str, Any]) -> dict[str, dict[str, Any]]:
+    """Professor conversa com alunos da própria disciplina, colegas e administração."""
+
+    assignment = teacher_assignment(db, user["id"])
+    enrollments = (
+        db.table("enrollments")
+        .select("student_id")
+        .eq("subject_id", assignment["subject_id"])
+        .execute()
+        .data
+    )
+    student_ids = list({row["student_id"] for row in enrollments})
+    contacts: dict[str, dict[str, Any]] = {}
+    for profile in active_profiles(db, "student", student_ids):
+        contacts[profile["id"]] = {**profile, "context": assignment["subject"]}
+    # A troca entre professores nao abre dados das disciplinas dos colegas.
+    for profile in active_profiles(db, "teacher"):
+        if profile["id"] != user["id"]:
+            contacts[profile["id"]] = {**profile, "context": "Professor"}
+    for profile in active_profiles(db, "admin"):
+        contacts[profile["id"]] = {**profile, "context": "Administração"}
+    return contacts
+
+
 @app.get("/communications/contacts")
 def communication_contacts(user: CommunicationUser):
     """Lista somente pessoas com quem o cargo atual pode iniciar conversa."""
 
     db = database()
-    contacts: dict[str, dict[str, Any]] = {}
     if user["role"] == "student":
-        enrollments = (
-            db.table("enrollments")
-            .select("subject_id,subjects(name)")
-            .eq("student_id", user["id"])
-            .execute()
-            .data
-        )
-        subject_ids = [row["subject_id"] for row in enrollments]
-        subject_names = {
-            row["subject_id"]: (row.get("subjects") or {}).get("name", "Disciplina")
-            for row in enrollments
-        }
-        assignments = (
-            db.table("teacher_subjects")
-            .select("teacher_id,subject_id")
-            .in_("subject_id", subject_ids)
-            .execute()
-            .data
-            if subject_ids
-            else []
-        )
-        teacher_ids = list({row["teacher_id"] for row in assignments})
-        profiles = (
-            db.table("profiles")
-            .select("id,full_name,role")
-            .in_("id", teacher_ids)
-            .eq("role", "teacher")
-            .eq("registration_status", "active")
-            .execute()
-            .data
-            if teacher_ids
-            else []
-        )
-        teachers_by_id = {profile["id"]: profile for profile in profiles}
-        for assignment in assignments:
-            profile = teachers_by_id.get(assignment["teacher_id"])
-            if profile:
-                contacts[profile["id"]] = {
-                    **profile,
-                    "context": subject_names.get(assignment["subject_id"], "Disciplina"),
-                }
+        contacts = student_contacts(db, user)
     elif user["role"] == "admin":
-        # A administração conversa só com professores ativos, nunca com alunos.
-        teachers = (
-            db.table("profiles")
-            .select("id,full_name,role")
-            .eq("role", "teacher")
-            .eq("registration_status", "active")
-            .execute()
-            .data
-        )
-        for profile in teachers:
-            contacts[profile["id"]] = {**profile, "context": "Professor"}
+        contacts = admin_contacts(db)
     else:
-        assignment = teacher_assignment(db, user["id"])
-        enrollments = (
-            db.table("enrollments")
-            .select("student_id")
-            .eq("subject_id", assignment["subject_id"])
-            .execute()
-            .data
-        )
-        student_ids = list({row["student_id"] for row in enrollments})
-        students = (
-            db.table("profiles")
-            .select("id,full_name,role")
-            .in_("id", student_ids)
-            .eq("role", "student")
-            .eq("registration_status", "active")
-            .execute()
-            .data
-            if student_ids
-            else []
-        )
-        for profile in students:
-            contacts[profile["id"]] = {**profile, "context": assignment["subject"]}
-
-        # A troca entre professores nao abre dados das disciplinas dos colegas.
-        teachers = (
-            db.table("profiles")
-            .select("id,full_name,role")
-            .eq("role", "teacher")
-            .eq("registration_status", "active")
-            .execute()
-            .data
-        )
-        for profile in teachers:
-            if profile["id"] != user["id"]:
-                contacts[profile["id"]] = {**profile, "context": "Professor"}
-
-        admins = (
-            db.table("profiles")
-            .select("id,full_name,role")
-            .eq("role", "admin")
-            .eq("registration_status", "active")
-            .execute()
-            .data
-        )
-        for profile in admins:
-            contacts[profile["id"]] = {**profile, "context": "Administração"}
-
+        contacts = teacher_contacts(db, user)
     return sorted(contacts.values(), key=lambda item: item["full_name"].casefold())
 
 
@@ -1638,21 +1659,22 @@ def send_ai_communication_message(payload: AICommunicationRequest, user: AITutor
     enforce_api_rate_limit(db, user["id"], "ai_communication")
     conversation_id = str(payload.conversation_id) if payload.conversation_id else start_ai_conversation(db, user["id"])
     owned_conversation(db, user["id"], conversation_id, expected_kind="ai")
-    now = datetime.now(timezone.utc).isoformat()
-    user_message = (
-        db.table("messages")
-        .insert(
-            {
-                "conversation_id": conversation_id,
-                "sender_id": user["id"],
-                "sender_kind": "user",
-                "body": payload.body,
-                "created_at": now,
-            }
-        )
-        .execute()
-        .data[0]
-    )
+    history = ai_conversation_history(db, conversation_id)
+    answer, suggestions = generate_ai_answer(user, payload.body, history)
+    user_message, assistant_message = save_ai_exchange(db, user["id"], conversation_id, payload.body, answer)
+    return {
+        "conversation_id": conversation_id,
+        "user_message": {**user_message, "sender_name": user["full_name"], "is_mine": True},
+        "assistant_message": {**assistant_message, "sender_name": "Tutor IA", "is_mine": False},
+        "suggested_questions": suggestions,
+    }
+
+
+def ai_conversation_history(db: Client, conversation_id: str) -> list[dict[str, str]]:
+    """Devolve as últimas trocas concluídas, da mais antiga para a mais recente."""
+
+    # A pergunta atual entra somente em user_request. O histórico contém apenas
+    # trocas já concluídas; uma falha do provedor não deixa mensagem pendente.
     recent = (
         db.table("messages")
         .select("sender_kind,body")
@@ -1662,10 +1684,15 @@ def send_ai_communication_message(payload: AICommunicationRequest, user: AITutor
         .execute()
         .data
     )
-    history = [
+    return [
         {"role": "assistant" if row["sender_kind"] == "assistant" else "user", "content": row["body"]}
         for row in reversed(recent)
     ]
+
+
+def generate_ai_answer(user: dict[str, Any], body: str, history: list[dict[str, str]]) -> tuple[str, list[str]]:
+    """Pede a resposta ao provedor e valida resposta e sugestões antes de gravar."""
+
     task = (
         "Explique o conteudo como tutor. Ajude o estudante a raciocinar sem fazer atividades avaliativas por ele."
         if user["role"] == "student"
@@ -1676,7 +1703,7 @@ def send_ai_communication_message(payload: AICommunicationRequest, user: AITutor
             model=os.getenv("OPENAI_MODEL", "gpt-5-mini"),
             input=protected_ai_input(
                 task=task,
-                user_request=payload.body,
+                user_request=body,
                 context={"perfil": user["role"]},
                 history=history,
             ),
@@ -1695,29 +1722,28 @@ def send_ai_communication_message(payload: AICommunicationRequest, user: AITutor
         raise
     except Exception as error:
         raise HTTPException(status_code=502, detail="O assistente nao conseguiu responder agora.") from error
+    return answer, suggestions
 
-    assistant_message = (
-        db.table("messages")
-        .insert(
-            {
-                "conversation_id": conversation_id,
-                "sender_id": None,
-                "sender_kind": "assistant",
-                "body": answer,
-            }
-        )
-        .execute()
-        .data[0]
-    )
-    db.table("conversations").update(
-        {"last_message_at": datetime.now(timezone.utc).isoformat()}
-    ).eq("id", conversation_id).execute()
-    return {
-        "conversation_id": conversation_id,
-        "user_message": {**user_message, "sender_name": user["full_name"], "is_mine": True},
-        "assistant_message": {**assistant_message, "sender_name": "Tutor IA", "is_mine": False},
-        "suggested_questions": suggestions,
-    }
+
+def save_ai_exchange(
+    db: Client, user_id: str, conversation_id: str, question: str, answer: str
+) -> tuple[dict[str, Any], dict[str, Any]]:
+    """Grava pergunta e resposta juntas e devolve as duas mensagens salvas."""
+
+    try:
+        # Uma transação grava o par e o horário da conversa. Não há janela entre
+        # dois INSERTs HTTP em que apenas a pergunta ficaria persistida.
+        exchange = db.rpc("append_ai_exchange", {
+            "p_actor": user_id, "p_conversation": conversation_id,
+            "p_question": question, "p_answer": answer,
+        }).execute().data
+        if not isinstance(exchange, dict) or not all(
+            isinstance(exchange.get(key), dict) for key in ("user_message", "assistant_message")
+        ):
+            raise ValueError("Invalid exchange receipt")
+        return exchange["user_message"], exchange["assistant_message"]
+    except Exception as error:
+        raise HTTPException(status_code=503, detail="Não foi possível salvar a resposta do assistente.") from error
 
 
 @app.get("/question-bank")
@@ -1926,6 +1952,15 @@ def student_subject_catalog(db: Client, student_id: str) -> list[dict[str, Any]]
     subject_ids = [row["subject_id"] for row in enrollments]
     if not subject_ids:
         return []
+    return build_subject_catalog(*catalog_rows(db, student_id, subject_ids))
+
+
+CatalogRows = tuple[list[dict[str, Any]], ...]
+
+
+def catalog_rows(db: Client, student_id: str, subject_ids: list[str]) -> CatalogRows:
+    """Carrega disciplinas, módulos, aulas publicadas, progresso e dificuldades."""
+
     subject_rows = (
         db.table("subjects")
         .select("id,name,description,category")
@@ -1973,6 +2008,17 @@ def student_subject_catalog(db: Client, student_id: str) -> list[dict[str, Any]]
         .execute()
         .data
     )
+    return subject_rows, module_rows, lesson_rows, progress_rows, difficulty_rows
+
+
+def build_subject_catalog(
+    subject_rows: list[dict[str, Any]],
+    module_rows: list[dict[str, Any]],
+    lesson_rows: list[dict[str, Any]],
+    progress_rows: list[dict[str, Any]],
+    difficulty_rows: list[dict[str, Any]],
+) -> list[dict[str, Any]]:
+    """Agrupa as linhas já carregadas no contrato do catálogo; não consulta o banco."""
 
     progress_by_lesson = {row["lesson_id"]: row for row in progress_rows}
     lessons_by_module: dict[str, list[dict[str, Any]]] = defaultdict(list)
@@ -2147,6 +2193,51 @@ def open_diagnostic_session(db: Client, student_id: str) -> dict[str, Any] | Non
     return rows[0] if rows else None
 
 
+DIAGNOSTIC_QUESTION_COLUMNS = "id,subject_id,topic,difficulty,question,options,correct_index,explanation,subjects(name)"
+
+
+def create_diagnostic_session(db: Client, student_id: str) -> tuple[dict[str, Any], list[dict[str, Any]]]:
+    """Sorteia as questões da primeira medição e abre a sessão do aluno."""
+
+    rows = (
+        db.table("questions")
+        .select(DIAGNOSTIC_QUESTION_COLUMNS)
+        .eq("status", "published")
+        .order("created_at")
+        .limit(200)
+        .execute()
+        .data
+    )
+    # Duas questões por disciplina deixam a avaliação curta e variada.
+    per_subject: dict[str, int] = defaultdict(int)
+    selected = []
+    for row in rows:
+        if per_subject[row["subject_id"]] >= 2:
+            continue
+        selected.append(row)
+        per_subject[row["subject_id"]] += 1
+        if len(selected) >= 8:
+            break
+    if not selected:
+        raise HTTPException(status_code=409, detail="Ainda não há questões publicadas para a avaliação diagnóstica.")
+    session = (
+        db.table("diagnostic_sessions")
+        .insert({"student_id": student_id, "question_ids": [row["id"] for row in selected]})
+        .execute()
+        .data[0]
+    )
+    return session, selected
+
+
+def diagnostic_session_questions(db: Client, session: dict[str, Any]) -> list[dict[str, Any]]:
+    """Recarrega as questões de uma sessão que o aluno já havia aberto."""
+
+    question_ids = session.get("question_ids") or []
+    if not question_ids:
+        return []
+    return db.table("questions").select(DIAGNOSTIC_QUESTION_COLUMNS).in_("id", question_ids).execute().data
+
+
 @app.get("/student/diagnostic")
 def student_diagnostic(user: dict = Depends(require_role("student"))):
     """Cria a primeira medição com questões publicadas de várias disciplinas."""
@@ -2180,46 +2271,10 @@ def student_diagnostic(user: dict = Depends(require_role("student"))):
         }
 
     session = open_diagnostic_session(db, user["id"])
-    if not session:
-        rows = (
-            db.table("questions")
-            .select("id,subject_id,topic,difficulty,question,options,correct_index,explanation,subjects(name)")
-            .eq("status", "published")
-            .order("created_at")
-            .limit(200)
-            .execute()
-            .data
-        )
-        # Duas questões por disciplina deixam a avaliação curta e variada.
-        per_subject: dict[str, int] = defaultdict(int)
-        selected = []
-        for row in rows:
-            if per_subject[row["subject_id"]] >= 2:
-                continue
-            selected.append(row)
-            per_subject[row["subject_id"]] += 1
-            if len(selected) >= 8:
-                break
-        if not selected:
-            raise HTTPException(status_code=409, detail="Ainda não há questões publicadas para a avaliação diagnóstica.")
-        session = (
-            db.table("diagnostic_sessions")
-            .insert({"student_id": user["id"], "question_ids": [row["id"] for row in selected]})
-            .execute()
-            .data[0]
-        )
-        questions = selected
+    if session:
+        questions = diagnostic_session_questions(db, session)
     else:
-        question_ids = session.get("question_ids") or []
-        questions = (
-            db.table("questions")
-            .select("id,subject_id,topic,difficulty,question,options,correct_index,explanation,subjects(name)")
-            .in_("id", question_ids)
-            .execute()
-            .data
-            if question_ids
-            else []
-        )
+        session, questions = create_diagnostic_session(db, user["id"])
     answers = (
         db.table("diagnostic_answers")
         .select("question_id")
@@ -2271,16 +2326,23 @@ def answer_student_diagnostic(
     )
     if not question_rows:
         raise HTTPException(status_code=404, detail="Questão não encontrada.")
-    db.table("diagnostic_answers").insert(
-        {
-            "session_id": session["id"],
-            "student_id": user["id"],
-            "question_id": str(question_id),
-            "selected_index": payload.selected_index,
-            "correct": payload.selected_index == question_rows[0]["correct_index"],
-            "response_time_seconds": payload.response_time_seconds,
-        }
-    ).execute()
+    try:
+        db.table("diagnostic_answers").insert(
+            {
+                "session_id": session["id"],
+                "student_id": user["id"],
+                "question_id": str(question_id),
+                "selected_index": payload.selected_index,
+                "correct": payload.selected_index == question_rows[0]["correct_index"],
+                "response_time_seconds": payload.response_time_seconds,
+            }
+        ).execute()
+    except Exception as error:
+        # Duas respostas simultâneas passam pela checagem acima; a restrição
+        # unique(session_id, question_id) decide e a perdedora recebe 409.
+        if getattr(error, "code", None) == "23505":
+            raise HTTPException(status_code=409, detail="Esta questão já foi respondida.") from error
+        raise
     answered = (
         db.table("diagnostic_answers")
         .select("id", count="exact")
@@ -3161,11 +3223,16 @@ def set_admin_lesson_required_exercises(
     requested_ids = [str(question_id) for question_id in payload.question_ids]
     if any(question_id not in allowed_ids for question_id in requested_ids):
         raise HTTPException(status_code=422, detail="Selecione apenas questões publicadas da disciplina desta aula.")
-    db.table("lesson_required_exercises").delete().eq("lesson_id", str(lesson_id)).execute()
-    if requested_ids:
-        db.table("lesson_required_exercises").insert(
-            [{"lesson_id": str(lesson_id), "question_id": question_id, "position": index + 1} for index, question_id in enumerate(requested_ids)]
+    # Uma única RPC troca a lista na mesma transação, sem janela sem exercícios.
+    try:
+        db.rpc(
+            "replace_lesson_required_exercises",
+            {"p_lesson_id": str(lesson_id), "p_question_ids": requested_ids},
         ).execute()
+    except Exception as error:
+        if "invalid_questions" in str(error) or "duplicate_questions" in str(error):
+            raise HTTPException(status_code=422, detail="Selecione apenas questões publicadas da disciplina desta aula.") from error
+        raise
     return admin_lesson_required_exercises(db, lesson_id)
 
 

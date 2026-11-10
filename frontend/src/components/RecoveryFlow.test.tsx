@@ -1,7 +1,7 @@
 import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import App from '../App';
-import { PRIVACY_POLICY_VERSION } from './PrivacyPolicyAccess';
+const PRIVACY_POLICY_VERSION = '1.7'; // Fixture de versão recebida da API.
 
 const auth = vi.hoisted(() => ({
   getSession: vi.fn(),

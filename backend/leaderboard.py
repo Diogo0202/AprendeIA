@@ -17,6 +17,8 @@ from uuid import UUID
 from fastapi import Depends, FastAPI, HTTPException, Query, Response
 from pydantic import BaseModel, ConfigDict, Field, StrictBool, StrictInt, ValidationError, field_validator
 
+from rpc_errors import rpc_http_error
+
 
 LEADERBOARD_RATE_LIMITS = {
     "leaderboard_read": (60, 15 * 60),
@@ -32,14 +34,15 @@ FEATURED_ACHIEVEMENT_IDS = frozenset({
     "weekly_podium",
 })
 
-RPC_ERRORS = {
-    "PT400": (400, "Confira os dados do ranking."),
-    "PT401": (401, "Autenticação necessária."),
-    "PT403": (403, "Você não tem permissão para este ranking."),
-    "PT404": (404, "Ranking ou turma não encontrado."),
-    "PT409": (409, "A preferência conflita com o estado atual da conta."),
-    "PT422": (422, "Preferências de ranking inválidas."),
-    "PT429": (429, "Limite de solicitações atingido."),
+RPC_ERROR_MESSAGES = {
+    400: "Confira os dados do ranking.",
+    401: "Autenticação necessária.",
+    403: "Você não tem permissão para este ranking.",
+    404: "Ranking ou turma não encontrado.",
+    409: "A preferência conflita com o estado atual da conta.",
+    422: "Preferências de ranking inválidas.",
+    429: "Limite de solicitações atingido.",
+    503: "Ranking temporariamente indisponível.",
 }
 
 
@@ -47,11 +50,7 @@ def _rpc(db: Any, name: str, params: dict[str, Any]) -> Any:
     try:
         return db.rpc(name, params).execute().data
     except Exception as error:
-        status, detail = RPC_ERRORS.get(
-            str(getattr(error, "code", "")),
-            (503, "Ranking temporariamente indisponível."),
-        )
-        raise HTTPException(status, detail) from error
+        raise rpc_http_error(error, RPC_ERROR_MESSAGES) from error
 
 
 def _object(data: Any) -> dict[str, Any]:

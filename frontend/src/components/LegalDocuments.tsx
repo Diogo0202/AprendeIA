@@ -1,7 +1,6 @@
 import { useEffect, useId, useRef, useState } from 'react';
-import { PRIVACY_POLICY_VERSION, PrivacyPolicyContent } from './PrivacyPolicyAccess';
-
-export const TERMS_OF_USE_VERSION = '1.0';
+import { PrivacyPolicyContent } from './PrivacyPolicyAccess';
+import { legalDocumentLabel, useCurrentLegalDocuments } from '../lib/legalVersions';
 
 const LGPD_URL = 'https://www.planalto.gov.br/ccivil_03/_ato2015-2018/2018/lei/l13709.htm';
 
@@ -88,6 +87,7 @@ const anpdReferences: { title: string; href: string; note: string }[] = [
 ];
 
 function TermsOfUseContent() {
+  const TERMS_OF_USE_VERSION = useCurrentLegalDocuments()?.terms.version ?? 'indisponível';
   return (
     <div className="privacy-policy-content">
       <p>
@@ -207,6 +207,7 @@ function LegislationContent() {
 
 /** Abre os Termos de Uso no cadastro e na tela de novo aceite. */
 export function TermsOfUseAccess({ label = 'Termos de Uso' }: { label?: string }) {
+  const documents = useCurrentLegalDocuments();
   const titleId = useId();
   const [isOpen, setIsOpen] = useState(false);
   const dialogRef = useRef<HTMLDialogElement>(null);
@@ -231,7 +232,7 @@ export function TermsOfUseAccess({ label = 'Termos de Uso' }: { label?: string }
       >
         <div className="privacy-policy-heading">
           <div>
-            <p className="eyebrow">VERSÃO {TERMS_OF_USE_VERSION} · 04/11/2026</p>
+            <p className="eyebrow">{legalDocumentLabel(documents?.terms)}</p>
             <h2 id={titleId}>Termos de Uso do AprendeIA</h2>
           </div>
           <button
@@ -251,11 +252,12 @@ export function TermsOfUseAccess({ label = 'Termos de Uso' }: { label?: string }
 
 /** Reúne política, termos e legislação em uma aba disponível para todos os perfis. */
 export function LegalDocuments({ id }: { id?: string }) {
+  const documents = useCurrentLegalDocuments();
   const titleId = useId();
   const [activeTab, setActiveTab] = useState<LegalTab>('privacy');
   const versions: Record<LegalTab, string> = {
-    privacy: `VERSÃO ${PRIVACY_POLICY_VERSION} · 04/11/2026`,
-    terms: `VERSÃO ${TERMS_OF_USE_VERSION} · 04/11/2026`,
+    privacy: legalDocumentLabel(documents?.privacy),
+    terms: legalDocumentLabel(documents?.terms),
     law: 'LEGISLAÇÃO CITADA NA POLÍTICA',
   };
 

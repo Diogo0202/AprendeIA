@@ -36,9 +36,9 @@ async function check(name, operation) {
   console.log(`OK ${name}`);
 }
 // As versões vêm do trigger vigente, para o teste acompanhar novas versões da política.
-const signupBody = (await db.query(`select pg_get_functiondef('private.handle_new_user()'::regprocedure) as body`)).rows[0].body;
-const policyVersion = signupBody.match(/policy_version_value (?:<>|=) '(\d+\.\d+)'/)[1];
-const termsVersion = signupBody.match(/terms_version_value = '(\d+\.\d+)'/)[1];
+const legal = (await db.query('select public.get_current_legal_document_versions() as documents')).rows[0].documents;
+const policyVersion = legal.privacy.version;
+const termsVersion = legal.terms.version;
 function consent(extra = {}) {
   return { full_name: 'Nome de teste', age_band: 'adult', privacy_policy_accepted: true, privacy_policy_version: policyVersion, terms_of_use_accepted: true, terms_of_use_version: termsVersion, ...extra };
 }

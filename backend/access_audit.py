@@ -4,6 +4,7 @@ O módulo trabalha somente com metadados técnicos. Corpo, query string, token,
 senha e endereço IP puro nunca entram no registro persistido.
 """
 
+import uuid
 from datetime import datetime, timezone
 from typing import Any
 
@@ -149,6 +150,14 @@ def build_access_audit_record(
         }
         and isinstance(value, (str, int, float, bool, type(None)))
     }
+    # A coluna resource_id é uuid; identificadores de outro formato (ex.: question_id
+    # textual) derrubariam o INSERT inteiro, então só UUID válido é gravado.
+    safe_resource_id = None
+    if resource_id is not None:
+        try:
+            safe_resource_id = str(uuid.UUID(str(resource_id)))
+        except ValueError:
+            safe_resource_id = None
     timestamp = datetime.now(timezone.utc).isoformat()
     return {
         "actor_id": actor_id,
@@ -165,7 +174,7 @@ def build_access_audit_record(
         "user_id": actor_id,
         "role": safe_role,
         "resource": route[:180],
-        "resource_id": resource_id,
+        "resource_id": safe_resource_id,
         "ip_hash": network_hash,
         "created_at": timestamp,
         "metadata": safe_metadata,

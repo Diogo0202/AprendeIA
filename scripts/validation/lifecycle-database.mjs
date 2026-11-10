@@ -41,9 +41,9 @@ const minor = 'd0000000-0000-0000-0000-000000000002';
 const admin = 'd0000000-0000-0000-0000-000000000003';
 const unknown = 'd0000000-0000-0000-0000-000000000004';
 // A versão vem do trigger vigente, inclusive quando a migration 1.3 chega.
-const signupBody = (await db.query(`select pg_get_functiondef('private.handle_new_user()'::regprocedure) as body`)).rows[0].body;
-const policy = signupBody.match(/policy_version_value (?:<>|=) '(\d+\.\d+)'/)[1];
-const terms = signupBody.match(/terms_version_value = '(\d+\.\d+)'/)?.[1];
+const legal = (await db.query('select public.get_current_legal_document_versions() as documents')).rows[0].documents;
+const policy = legal.privacy.version;
+const terms = legal.terms.version;
 for (const [id, age] of [[adult,'adult'],[minor,'minor'],[admin,'unknown'],[unknown,'unknown']]) {
   await db.query(`insert into auth.users(id,email,raw_user_meta_data) values ($1,$2,$3)`, [id, id+'@example.test', JSON.stringify({full_name:'Teste',age_band:age,privacy_policy_accepted:true,privacy_policy_version:policy,terms_of_use_accepted:true,terms_of_use_version:terms})]);
 }

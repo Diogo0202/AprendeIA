@@ -99,6 +99,8 @@ const subject2 = '10000000-0000-0000-0000-000000000002';
 let policy;
 let terms;
 async function currentPolicy() {
+  const registered = (await db.query("select to_regclass('public.legal_document_versions') as table_name")).rows[0].table_name;
+  if (registered) return (await db.query('select public.get_current_legal_document_versions() as documents')).rows[0].documents.privacy.version;
   const { body } = (await db.query(`select pg_get_functiondef('private.handle_new_user()'::regprocedure) body`)).rows[0];
   return body.match(/policy_version_value (?:<>|=) '(\d+\.\d+)'/)[1];
 }
@@ -160,8 +162,7 @@ for (const file of migrations) {
   try { await db.exec(sql); } catch(e) { throw new Error(`Migration ${file}: ${e.message} (${e.position})`,{cause:e}); }
 }
 policy=await currentPolicy();
-const signupBody = (await db.query(`select pg_get_functiondef('private.handle_new_user()'::regprocedure) body`)).rows[0].body;
-terms=signupBody.match(/terms_version_value = '(\d+\.\d+)'/)[1];
+terms=(await db.query('select public.get_current_legal_document_versions() as documents')).rows[0].documents.terms.version;
 await db.query(`update public.profiles set privacy_policy_version=$1,terms_of_use_version=$3,terms_of_use_accepted_at=now() where id=$2`,[policy,legacy,terms]);
 for(const [id,role] of [[student,'student'],[peer,'student'],[outsider,'student'],[teacher,'teacher'],[teacher2,'teacher']]) await user(id,role);
 
@@ -196,8 +197,6 @@ await check('apelido inicial aleatório sem email/nome/id e opt-in falso',async(
 });
 await check('primeiro acerto por questão, dia único, repetição e primeira conclusão',async()=>{
   const q=await question();
-  await attempt(student,q,false);
-  assert.equal((await summary(student)).points,20);
   await attempt(student,q,true);
   // PGlite serializa chamadas na mesma conexão, não simula múltiplas sessões.
   await Promise.all(Array.from({length:12},()=>attempt(student,q,true)));
@@ -209,6 +208,15 @@ await check('primeiro acerto por questão, dia único, repetição e primeira co
   assert.equal(s.points,130); assert.equal(s.weekly_xp,130);
   assert.equal(s.catalog.find(c=>c.id==='ten_correct_answers').progress,1);
   assert.equal(s.catalog.find(c=>c.id==='first_lesson').unlocked,true);
+});
+await check('gabarito revelado no erro impede XP no acerto posterior',async()=>{
+  const id=uid(21); await user(id);
+  const q=await question('revealed-answer');
+  await attempt(id,q,false);
+  await attempt(id,q,true);
+  await Promise.all(Array.from({length:12},()=>attempt(id,q,true)));
+  assert.equal((await summary(id)).points,20); // Só a atividade do dia concede XP.
+  assert.equal(await count(`select count(*) n from public.gamification_events where student_id=$1 and event_kind='correct'`,[id]),0);
 });
 await check('explorador exige aulas em duas disciplinas, questões não bastam',async()=>{
   await attempt(student,await question('language',subject2),true);
@@ -240,9 +248,11 @@ await check('virada: primeiras dez questões distintas, mesmo tópico e discipli
   const id=uid(10); await user(id);
   const qs=[];
   for(let i=0;i<10;i++) qs.push(await question('recovery'));
-  for(let i=0;i<5;i++) { await attempt(id,qs[i],i<2); await attempt(id,qs[i],true); }
+  const base=Date.now()-60_000;
+  // Horários distintos tornam verificável qual resposta veio primeiro.
+  for(let i=0;i<5;i++) { await attempt(id,qs[i],i<2,new Date(base+i*1000).toISOString()); await attempt(id,qs[i],true,new Date(base+i*1000+1).toISOString()); }
   assert.equal((await summary(id)).catalog.find(c=>c.id==='turnaround').unlocked,false);
-  for(let i=5;i<10;i++) await attempt(id,qs[i],i<9);
+  for(let i=5;i<10;i++) await attempt(id,qs[i],i<9,new Date(base+i*1000).toISOString());
   const s=await summary(id);
   assert.equal(s.catalog.find(c=>c.id==='turnaround').unlocked,true);
   assert.equal(s.bonus_xp,100);

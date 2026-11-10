@@ -8,6 +8,8 @@ from uuid import UUID
 from fastapi import Depends, FastAPI, Header, HTTPException
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
+from rpc_errors import rpc_http_error
+
 ADMISSION_VERSION = "1"
 PROFILE_FIELDS = "auth_created_at,account_expires_at,age_band,admission_status,admission_version"
 
@@ -135,9 +137,13 @@ def register_lifecycle_routes(
         try:
             return database().rpc(name, params).execute().data
         except Exception as error:
-            code = str(getattr(error, "code", ""))
-            status = {"PT403": 403, "PT409": 409, "PT400": 400, "PT404": 404}.get(code, 503)
-            raise HTTPException(status, "Operação de ciclo de conta indisponível ou recusada.") from error
+            raise rpc_http_error(error, {
+                400: "Operação de ciclo de conta indisponível ou recusada.",
+                403: "Operação de ciclo de conta indisponível ou recusada.",
+                404: "Operação de ciclo de conta indisponível ou recusada.",
+                409: "Operação de ciclo de conta indisponível ou recusada.",
+                503: "Operação de ciclo de conta indisponível ou recusada.",
+            }) from error
 
     def internal(x_account_retention_secret: str | None = Header(default=None)):
         expected = retention_secret()

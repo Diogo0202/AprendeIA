@@ -35,5 +35,40 @@ class RequiredExercisesTests(unittest.TestCase):
         self.assertIn("foreign key (lesson_id, question_id)", migration)
 
 
+    def test_replacement_is_one_transactional_rpc_restricted_to_service_role(self):
+        migration = (
+            Path(__file__).resolve().parents[1]
+            / "supabase"
+            / "migrations"
+            / "20261110120000_replace_lesson_required_exercises.sql"
+        ).read_text(encoding="utf-8")
+        self.assertIn("replace_lesson_required_exercises(", migration)
+        self.assertIn("set search_path = public, pg_temp", migration)
+        self.assertIn("to service_role", migration)
+        self.assertIn("from public, anon, authenticated", migration)
+        source = (Path(__file__).parent / "main.py").read_text(encoding="utf-8")
+        self.assertIn('"replace_lesson_required_exercises"', source)
+        self.assertNotIn('table("lesson_required_exercises").delete()', source)
+
+
+class AuditHardeningTests(unittest.TestCase):
+    def test_audit_network_hash_is_computed_and_domain_separated(self):
+        from auth_security import rate_limit_hash
+
+        secret = "s" * 32
+        audit = rate_limit_hash("audit_network", "203.0.113.5", secret)
+        self.assertEqual(len(audit), 64)
+        self.assertNotEqual(audit, rate_limit_hash("network", "203.0.113.5", secret))
+
+    def test_non_uuid_resource_id_is_dropped_not_fatal(self):
+        from access_audit import build_access_audit_record
+
+        common = dict(actor_id=None, actor_role="student", subject_hash=None, action="x",
+                      method="POST", route="/r", status_code=200, request_id="r", network_hash=None)
+        self.assertIsNone(build_access_audit_record(resource_id="questao-abc", **common)["resource_id"])
+        valid = "00000000-0000-0000-0000-000000000001"
+        self.assertEqual(build_access_audit_record(resource_id=valid, **common)["resource_id"], valid)
+
+
 if __name__ == "__main__":
     unittest.main()

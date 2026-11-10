@@ -13,6 +13,8 @@ from uuid import UUID
 from fastapi import Depends, FastAPI, HTTPException, Query, Request
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
+from rpc_errors import rpc_http_error
+
 MIN_GROUP_SIZE = 3
 TREND_WEEKS = 4
 ROW_LIMIT = 10_000
@@ -324,15 +326,17 @@ def register_admin_panel_routes(
                 "p_reason": payload.reason, "p_identity_hash": identity_hash(rows[0]["email"]),
             }).execute().data
         except Exception as error:
-            code = str(getattr(error, "code", ""))
-            status, message = {
-                "PT400": (400, "Confira a confirmação e o motivo."),
-                "PT403": (403, "Esta conta não pode ser excluída pelo painel."),
-                "PT404": (404, "Conta não encontrada."),
-                "PT409": (409, "A conta mudou durante a exclusão. Atualize a lista."),
-                "PT412": (409, "A conta tem arquivos armazenados. Remova-os antes de excluir."),
-            }.get(code, (503, "Não foi possível excluir a conta agora."))
-            raise HTTPException(status, message) from error
+            rpc_error = rpc_http_error(error, {
+                400: "Confira a confirmação e o motivo.",
+                403: "Esta conta não pode ser excluída pelo painel.",
+                404: "Conta não encontrada.",
+                409: "A conta mudou durante a exclusão. Atualize a lista.",
+                412: "A conta tem arquivos armazenados. Remova-os antes de excluir.",
+                503: "Não foi possível excluir a conta agora.",
+            })
+            if getattr(error, "code", None) == "PT412":
+                rpc_error.status_code = 409
+            raise rpc_error from error
         deleted_role = (result or {}).get("deleted_role", rows[0]["role"])
         # O evento guarda o cargo e o motivo; o identificador da conta some com ela.
         request.state.audit_metadata = {"deleted_role": deleted_role, "reason": payload.reason}

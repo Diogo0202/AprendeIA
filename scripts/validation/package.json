@@ -3,7 +3,7 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "test": "node privacy-database.mjs && node lifecycle-database.mjs && node admin-database.mjs && node gamification-database.mjs && node extended-privacy-database.mjs && node email-delivery-database.mjs"
+    "test": "node privacy-database.mjs && node lifecycle-database.mjs && node admin-database.mjs && node gamification-database.mjs && node extended-privacy-database.mjs && node email-delivery-database.mjs && node profile-access-database.mjs && node legal-versions-database.mjs && node atomic-ai-database.mjs"
   },
   "devDependencies": {
     "@electric-sql/pglite": "0.5.14"

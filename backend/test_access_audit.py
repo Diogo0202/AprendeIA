@@ -140,6 +140,41 @@ class AccessAuditTests(unittest.TestCase):
         self.assertEqual(record["ip_hash"], "a" * 64)
         self.assertTrue(record["created_at"])
 
+    def test_non_uuid_resource_id_is_dropped_instead_of_breaking_the_insert(self):
+        """question_id textual não cabe na coluna uuid e derrubaria o INSERT."""
+
+        def build(resource_id):
+            return build_access_audit_record(
+                actor_id=None,
+                actor_role="student",
+                subject_hash=None,
+                action="student.question.answer",
+                method="POST",
+                route="/student/questions/{question_id}/answer",
+                status_code=200,
+                request_id="00000000-0000-0000-0000-000000000002",
+                network_hash=None,
+                resource_id=resource_id,
+            )
+
+        self.assertIsNone(build("q-abc-123")["resource_id"])
+        self.assertIsNone(build("not-a-uuid")["resource_id"])
+        valid = "00000000-0000-0000-0000-000000000003"
+        self.assertEqual(build(valid)["resource_id"], valid)
+
+    def test_audit_network_hash_is_filled_when_pepper_is_configured(self):
+        from auth_security import rate_limit_hash
+
+        secret = "p" * 40
+        audit = rate_limit_hash("audit_network", "203.0.113.7", secret)
+        login = rate_limit_hash("network", "203.0.113.7", secret)
+
+        self.assertEqual(len(audit), 64)
+        # Domínio separado no HMAC: o hash da auditoria não se confunde com o do login.
+        self.assertNotEqual(audit, login)
+        with patch.dict(os.environ, {"RATE_LIMIT_PEPPER": secret}):
+            self.assertEqual(rate_limit_hash("audit_network", "203.0.113.7"), audit)
+
     def test_weekly_summary_audit_metadata_keeps_only_aggregate_fields(self):
         record = build_access_audit_record(
             actor_id=None,
@@ -237,7 +272,7 @@ class AccessAuditTests(unittest.TestCase):
         policy = (root / "docs" / "POLITICA_DE_PRIVACIDADE.md").read_text(encoding="utf-8")
         dialog = (root / "frontend" / "src" / "components" / "PrivacyPolicyAccess.tsx").read_text(encoding="utf-8")
         self.assertIn("**Versão:** 1.7", policy)
-        self.assertIn("PRIVACY_POLICY_VERSION = '1.7'", dialog)
+        self.assertIn("useCurrentLegalDocuments", dialog)
 
     def test_policy_v1_5_covers_admin_panel_and_ranking_visibility(self):
         root = Path(__file__).resolve().parents[1]
@@ -276,11 +311,12 @@ class AccessAuditTests(unittest.TestCase):
         self.assertIn("POST", endpoint.methods)
         accepted = PrivacyPolicyAccept(policy_version="1.7", terms_version="1.0")
         self.assertEqual((accepted.policy_version, accepted.terms_version), ("1.7", "1.0"))
-        for old_version in ("1.0", "1.1", "1.2", "1.3", "1.4", "1.5"):
+        # O modelo valida formato; a fonte central/RPC decide a versão vigente.
+        for old_version in ("", "1", "01.7", "x.y", "1.7 "):
             with self.subTest(version=old_version), self.assertRaises(Exception):
                 PrivacyPolicyAccept(policy_version=old_version, terms_version="1.0")
         # Os termos são obrigatórios e só a versão vigente é aceita.
-        for terms in (None, "0.9", "1.1"):
+        for terms in (None, "", "1", "01.0"):
             with self.subTest(terms=terms), self.assertRaises(Exception):
                 PrivacyPolicyAccept(policy_version="1.7", terms_version=terms)
         with self.assertRaises(Exception):

@@ -8,6 +8,8 @@ from fastapi import Depends, FastAPI, HTTPException, Request
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
+from rpc_errors import rpc_http_error
+
 
 class ProfileCorrections(BaseModel):
     """Só campos de apresentação podem ser corrigidos por este fluxo."""
@@ -150,9 +152,6 @@ def personal_export(db: Any, user_id: str) -> dict[str, Any]:
 
 def provider_error(error: Exception) -> HTTPException:
     """Códigos controlados preservam o estado HTTP sem divulgar respostas do provedor."""
-
-    code = str(getattr(error, "code", ""))
-    status = {"23505": 409, "PT400": 400, "PT403": 403, "PT404": 404, "PT409": 409, "PT412": 412}.get(code, 503)
     messages = {
         400: "Confira o tipo de pedido, os campos e a confirmação da ação.",
         403: "Pedido próprio e encerramento de conta administrativa não podem ser processados aqui.",
@@ -161,7 +160,7 @@ def provider_error(error: Exception) -> HTTPException:
         412: "A conta possui arquivos no Storage. Faça o atendimento assistido antes de encerrar a conta.",
         503: "Não foi possível processar o pedido agora.",
     }
-    return HTTPException(status, messages[status])
+    return rpc_http_error(error, messages)
 
 
 def register_privacy_routes(

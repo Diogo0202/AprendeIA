@@ -39,8 +39,8 @@ assert.match(finishFunction, /provider_accepted/);
 console.log('OK migrations SQL reais incluem status e horário de aceitação do Resend');
 
 const teacher = 'f0000000-0000-0000-0000-000000000001';
-const trigger = (await db.query("select pg_get_functiondef('private.handle_new_user()'::regprocedure) as body")).rows[0].body;
-const policy = trigger.match(/policy_version_value (?:<>|=) '(\d+\.\d+)'/)[1];
+const legal = (await db.query('select public.get_current_legal_document_versions() as documents')).rows[0].documents;
+const policy = legal.privacy.version;
 const metadata = {full_name:'Docente de teste', age_band:'adult', privacy_policy_accepted:true,
   privacy_policy_version:policy, terms_of_use_accepted:true, terms_of_use_version:'1.0'};
 await db.query('insert into auth.users(id,email,raw_user_meta_data) values ($1,$2,$3::jsonb)',[teacher,'teacher@example.test',JSON.stringify(metadata)]);

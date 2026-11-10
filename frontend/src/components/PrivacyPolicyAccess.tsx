@@ -1,6 +1,6 @@
 import { useEffect, useId, useRef, useState } from 'react';
 
-export const PRIVACY_POLICY_VERSION = '1.7';
+import { legalDocumentLabel, useCurrentLegalDocuments } from '../lib/legalVersions';
 
 /** O navegador também valida o campo; o backend repete a exigência no cadastro. */
 export function PrivacyConsentCheckbox({
@@ -38,6 +38,7 @@ export function PrivacyConsentCheckbox({
 
 /** Uma mesma política fica acessível no cadastro, no login e dentro do app. */
 export function PrivacyPolicyAccess({ label = 'Política de Privacidade' }: { label?: string }) {
+  const documents = useCurrentLegalDocuments();
   const titleId = useId();
   const [isOpen, setIsOpen] = useState(false);
   const dialogRef = useRef<HTMLDialogElement>(null);
@@ -62,7 +63,7 @@ export function PrivacyPolicyAccess({ label = 'Política de Privacidade' }: { la
       >
         <div className="privacy-policy-heading">
           <div>
-            <p className="eyebrow">VERSÃO {PRIVACY_POLICY_VERSION} · 09/11/2026</p>
+            <p className="eyebrow">{legalDocumentLabel(documents?.privacy)}</p>
             <h2 id={titleId}>Política de Privacidade do AprendeIA</h2>
           </div>
           <button
@@ -82,6 +83,9 @@ export function PrivacyPolicyAccess({ label = 'Política de Privacidade' }: { la
 
 /** Texto da política, usado no modal e na aba de documentos legais. */
 export function PrivacyPolicyContent() {
+  const documents = useCurrentLegalDocuments();
+  const PRIVACY_POLICY_VERSION = documents?.privacy.version ?? 'indisponível';
+  const TERMS_OF_USE_VERSION = documents?.terms.version ?? 'indisponível';
   return (
     <div className="privacy-policy-content">
       <p>
@@ -90,9 +94,10 @@ export function PrivacyPolicyContent() {
       </p>
       <p>
         A confirmação de leitura desta política registra ciência sobre o tratamento de dados. O
-        aceite dos Termos de Uso permanece na versão 1.0. Essas marcações não autorizam cookies
-        opcionais nem constituem consentimento geral para todas as finalidades. A instituição deve
-        definir a hipótese legal de cada tratamento. Recusar medição opcional não impede o acesso.
+        aceite dos Termos de Uso permanece na versão {TERMS_OF_USE_VERSION}. Essas marcações não
+        autorizam cookies opcionais nem constituem consentimento geral para todas as finalidades. A
+        instituição deve definir a hipótese legal de cada tratamento. Recusar medição opcional não
+        impede o acesso.
       </p>
       <h3>1. Informações tratadas</h3>
       <p>
@@ -238,11 +243,11 @@ export function PrivacyPolicyContent() {
       <h3>11. Registro do aceite</h3>
       <p>
         O cadastro registra a ciência da versão {PRIVACY_POLICY_VERSION} e o aceite dos Termos de
-        Uso 1.0, com seus horários. Quem confirmou uma política anterior precisa confirmar a ciência
-        desta versão para continuar. O registro obrigatório não ativa GA4 nem Clarity. A evidência
-        detalhada fica por até 7 dias; o perfil conserva a versão para controlar o acesso. Contas
-        existentes ou provisionadas pela administração só liberam o restante da plataforma depois da
-        concordância do próprio titular.
+        Uso {TERMS_OF_USE_VERSION}, com seus horários. Quem confirmou uma política anterior precisa
+        confirmar a ciência desta versão para continuar. O registro obrigatório não ativa GA4 nem
+        Clarity. A evidência detalhada fica por até 7 dias; o perfil conserva a versão para
+        controlar o acesso. Contas existentes ou provisionadas pela administração só liberam o
+        restante da plataforma depois da concordância do próprio titular.
       </p>
       <p className="privacy-policy-review-note">
         A lista de fornecedores ativos, a execução da limpeza, os prazos de backups e as condições

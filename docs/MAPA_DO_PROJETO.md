@@ -4,7 +4,11 @@
 O projeto separa a interface React, as regras FastAPI e a autorização PostgreSQL/Supabase. A documentação por área aponta para as partes que sustentam cada perfil e integração.
 
 ## Estrutura
-- `frontend/src/App.tsx` — reúne login, cadastro e painéis de aluno, professor e administração.
+- `frontend/src/App.tsx` — controla sessão, navegação entre telas e o fluxo de login e cadastro.
+- `frontend/src/components/auth/` — telas de login, cadastro e recuperação de senha.
+- `frontend/src/components/student/`, `teacher/` e `admin/` — painéis de cada cargo.
+- `frontend/src/components/layout/Chrome.tsx` — marca, cabeçalho e avatar compartilhados.
+- `frontend/src/types/app.ts` e `frontend/src/lib/theme.ts` — tipos e tema usados por várias telas.
 - `frontend/src/lib/supabase.ts` — mantém sessão e token público do navegador.
 - `backend/main.py` — expõe endpoints, valida cargos e coordena banco, IA e SMTP.
 - `backend/auth_security.py` — protege as tentativas de login.
@@ -22,5 +26,5 @@ O projeto separa a interface React, as regras FastAPI e a autorização PostgreS
 
 ## Pontos de atenção
 - Segredos pertencem ao backend e nunca aos arquivos versionados.
-- A interface ainda está concentrada em um arquivo grande e pode ser dividida quando o projeto crescer.
+- Os painéis de professor (`TeacherProfile.tsx`) e de aluno (`StudentProfile.tsx`) ainda são componentes grandes e podem ser divididos por aba.
 - Mudanças locais só chegam à produção depois de commit, push e novo deploy.
