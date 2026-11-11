@@ -1,13 +1,27 @@
 # Execução e deploy
 
+## Rodar com Docker
+
+Na raiz do repositório, com Docker em execução:
+
+```bash
+cp backend/.env.example backend/.env
+cp frontend/.env.example frontend/.env
+npx supabase start
+docker compose up --build
+```
+
+O `supabase start` usa `supabase/config.toml`, aplica todas as migrations e mostra a URL e as chaves que vão nos dois `.env` (a tabela está no README, seção "Rodando com Docker"). A API fica em `http://localhost:8000` e a interface em `http://localhost:8080`. O compose monta `frontend/nginx.local.conf`, que libera chamadas HTTP para o localhost; a imagem publicada continua usando `nginx.conf`.
+
 ## Rodar no VS Code
 
-Abra a pasta `D:\AprendeIA` e use dois terminais.
+Abra a pasta do repositório e use dois terminais.
 
 ### Backend
 
 ```powershell
-cd D:\AprendeIA\backend
+cd backend
+python -m venv .venv
 .\.venv\Scripts\Activate.ps1
 python -m pip install -r requirements.txt
 python -m uvicorn main:app --reload --host 127.0.0.1 --port 8000
@@ -16,7 +30,7 @@ python -m uvicorn main:app --reload --host 127.0.0.1 --port 8000
 ### Frontend
 
 ```powershell
-cd D:\AprendeIA\frontend
+cd frontend
 npm ci
 npm run dev -- --host 127.0.0.1
 ```

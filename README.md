@@ -61,7 +61,35 @@ O fluxo de solicitação e aprovação de professores está detalhado em [docs/C
 
 Arquivos gerados automaticamente, como `package-lock.json`, ficam sem comentários para não quebrar seu formato. As versões das dependências continuam fixas para o projeto se comportar igual em outras máquinas.
 
-## 🚀 Rodando o projeto localmente
+## 🐳 Rodando com Docker
+
+Precisa só de Docker e de Node.js para o `npx` do Supabase CLI. Não é preciso instalar Python nem aplicar migrations à mão.
+
+```bash
+git clone https://github.com/Diogo0202/AprendeIA.git
+cd AprendeIA
+cp backend/.env.example backend/.env
+cp frontend/.env.example frontend/.env
+npx supabase start           # Supabase local em Docker, já com todas as migrations
+```
+
+O `supabase start` mostra a URL da API e as chaves. Copie-as para os dois arquivos:
+
+| Arquivo | Variável | Valor |
+| --- | --- | --- |
+| `backend/.env` | `SUPABASE_URL` | `http://host.docker.internal:54321` |
+| `backend/.env` | `SUPABASE_SECRET_KEY` | chave secreta exibida |
+| `backend/.env` | `SUPABASE_PUBLISHABLE_KEY` | chave publicável exibida |
+| `frontend/.env` | `VITE_SUPABASE_URL` | `http://localhost:54321` |
+| `frontend/.env` | `VITE_SUPABASE_PUBLISHABLE_KEY` | chave publicável exibida |
+
+```bash
+docker compose up --build    # API em http://localhost:8000, interface em http://localhost:8080
+```
+
+`VITE_API_URL` e `FRONTEND_URL` já são definidos pelo `docker-compose.yml`. Deixe as variáveis `TURNSTILE_*` vazias para rodar sem CAPTCHA. Se já houver um projeto Supabase hospedado, preencha os dois `.env` com a URL e as chaves dele e rode só o `docker compose up --build`.
+
+## 🚀 Rodando o projeto sem Docker
 
 ### 🎨 Frontend
 
@@ -169,19 +197,14 @@ As regras são verificadas na API e também no banco com políticas RLS. Assim, 
 ## 🗃️ Preparando o Supabase
 
 1. Crie um projeto no Supabase.
-2. Execute, nesta ordem, as migrations:
-   - `supabase/migrations/20260905192035_initial_learning_schema.sql`
-   - `supabase/migrations/20260906120000_harden_authorization.sql`
-   - `supabase/migrations/20260908150000_teacher_subject_alerts.sql`
-   - `supabase/migrations/20260908170000_student_gamification.sql`
-   - `supabase/migrations/20260909120000_teacher_dashboard.sql`
-   - `supabase/migrations/20260909211500_post_deploy_hardening.sql`
-   - `supabase/migrations/20260911120000_teacher_registration_workflow.sql`
-   - `supabase/migrations/20260913143000_login_rate_limit.sql`
-   - `supabase/migrations/20260913150000_login_rate_limit_policy.sql`
-   - `supabase/migrations/20260913153000_login_attempt_reservation.sql`
-   - `supabase/migrations/20260914183000_student_profile_personalization.sql`
-   - `supabase/migrations/20260915120000_api_security_hardening.sql`
+2. Aplique todas as migrations de `supabase/migrations/` pelo CLI, que respeita a ordem dos arquivos:
+
+   ```bash
+   npx supabase link --project-ref <ref-do-projeto>
+   npx supabase db push
+   ```
+
+   No Supabase local (`npx supabase start`) elas já são aplicadas na subida. Não execute os arquivos um a um no SQL Editor: a lista muda a cada entrega e pular uma migration quebra o login e o `/health/ready`.
 3. Crie sua primeira conta pela interface.
 4. No SQL Editor, promova somente essa conta inicial:
 

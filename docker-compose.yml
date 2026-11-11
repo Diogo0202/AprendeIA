@@ -1,0 +1,35 @@
+# Sobe a API e a interface para uso local. O banco vem do Supabase (CLI local
+# ou projeto hospedado); as chaves ficam em backend/.env e frontend/.env.
+services:
+  backend:
+    build: ./backend
+    env_file: ./backend/.env
+    environment:
+      PORT: "8000"
+      # O CORS precisa aceitar a porta em que o compose publica a interface.
+      FRONTEND_URL: http://localhost:8080
+    ports:
+      - "8000:8000"
+    extra_hosts:
+      # Permite alcançar, de dentro do container, o Supabase local do CLI.
+      - "host.docker.internal:host-gateway"
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/health/live')"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  frontend:
+    build: ./frontend
+    env_file: ./frontend/.env
+    environment:
+      # O navegador chama a API pela porta publicada acima.
+      VITE_API_URL: http://localhost:8000
+    volumes:
+      # A configuração de produção só permite HTTPS; esta libera o localhost.
+      - ./frontend/nginx.local.conf:/etc/nginx/conf.d/default.conf:ro
+    ports:
+      - "8080:80"
+    depends_on:
+      backend:
+        condition: service_healthy
