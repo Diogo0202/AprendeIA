@@ -16,7 +16,7 @@ from aprendeia.adapters.inbound.http.schemas import QuestionRequest, StudentProf
 from aprendeia.adapters.inbound.http.support import http_headers
 from aprendeia.adapters.outbound.supabase.client import database
 from aprendeia.adapters.outbound.supabase.security import enforce_api_rate_limit
-from aprendeia.bootstrap import registered_routes
+from aprendeia.bootstrap import create_app, registered_routes
 from aprendeia.domain.questions import hide_question_solution
 from aprendeia.domain.text import sanitize_prompt_value
 from main import app
@@ -79,10 +79,11 @@ class SecurityBoundaryTests(unittest.TestCase):
 
     def test_public_api_documentation_is_disabled(self):
         """A documentação não deve virar uma porta pública do backend."""
-        public_paths = {route.path for route in registered_routes()}
+        app = create_app()
 
-        self.assertNotIn("/docs", public_paths)
-        self.assertNotIn("/openapi.json", public_paths)
+        self.assertIsNone(app.docs_url)
+        self.assertIsNone(app.redoc_url)
+        self.assertIsNone(app.openapi_url)
 
     def test_api_responses_receive_security_headers(self):
         """Até uma resposta de erro deve impedir cache, iframe e interpretação solta."""
