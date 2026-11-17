@@ -1,4 +1,9 @@
-"""Único ponto de leitura das variáveis de ambiente do backend.
+"""Leitura das variáveis de ambiente de Supabase, OpenAI, limites e rotinas internas.
+
+Turnstile (``adapters/outbound/turnstile.py``), e-mail
+(``adapters/outbound/email_delivery.py``) e CORS (``bootstrap.py``) leem o
+próprio ambiente, porque recebem o mapeamento como parâmetro nos testes. Um
+patch aqui não muda essas partes.
 
 Os valores são lidos a cada chamada: um segredo trocado no provedor passa a
 valer sem depender de estado guardado em memória.
