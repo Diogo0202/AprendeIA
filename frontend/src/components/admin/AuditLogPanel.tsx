@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useState } from 'react';
-import { apiError, apiFetch } from '../../lib/api';
+import { gateways } from '../../application/gateways';
+import { failureMessage } from '../../application/result';
 
 type AuditEvent = {
   id: number;
@@ -52,13 +53,13 @@ export function AuditLogPanel({ user = null, onClearUser }: AuditLogPanelProps =
     if (role) params.set('role', role);
     if (outcome) params.set('outcome', outcome);
     if (user) params.set('user_id', user.id);
-    const response = await apiFetch(`/admin/audit-logs?${params.toString()}`);
-    if (!response.ok) {
-      setMessage(await apiError(response, 'Não foi possível carregar a auditoria.'));
+    const result = await gateways().admin.auditLogs<AuditEvent[]>(params.toString());
+    if (!result.ok) {
+      setMessage(failureMessage(result, 'Não foi possível carregar a auditoria.'));
       setLoading(false);
       return;
     }
-    setEvents((await response.json()) as AuditEvent[]);
+    setEvents(result.data);
     setMessage('');
     setLoading(false);
   }, [days, outcome, role, user]);

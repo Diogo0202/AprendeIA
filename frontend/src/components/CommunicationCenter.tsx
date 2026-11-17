@@ -1,6 +1,6 @@
 import { FormEvent, useEffect, useMemo, useState } from 'react';
-import { apiError, apiFetch } from '../lib/api';
-import { isSupabaseConfigured } from '../lib/supabase';
+import { gateways, isConnected } from '../application/gateways';
+import { failureMessage } from '../application/result';
 
 type CommunicationRole = 'student' | 'teacher' | 'admin';
 type CommunicationMode = 'direct' | 'ai';
@@ -62,9 +62,7 @@ const demoContacts: Record<CommunicationRole, Contact[]> = {
 
 /** Centraliza conversa humana e IA sem misturar seus destinos no backend. */
 export function CommunicationCenter({ role, requestedMode }: CommunicationCenterProps) {
-  const [contacts, setContacts] = useState<Contact[]>(
-    isSupabaseConfigured ? [] : demoContacts[role],
-  );
+  const [contacts, setContacts] = useState<Contact[]>(isConnected() ? [] : demoContacts[role]);
   const [conversations, setConversations] = useState<Conversation[]>([]);
   const [selectedId, setSelectedId] = useState<string>(requestedMode === 'ai' ? 'ai-new' : '');
   const [messages, setMessages] = useState<Message[]>([]);
@@ -80,32 +78,31 @@ export function CommunicationCenter({ role, requestedMode }: CommunicationCenter
     selectedId === 'ai-new' ? 'Tutor IA' : (selectedConversation?.title ?? 'Escolha uma conversa');
 
   async function loadConversations(preferredId?: string) {
-    if (!isSupabaseConfigured) return;
-    const response = await apiFetch('/communications/conversations');
-    if (!response.ok)
-      throw new Error(await apiError(response, 'Nao foi possivel carregar as conversas.'));
-    const next = (await response.json()) as Conversation[];
+    if (!isConnected()) return;
+    const loaded = await gateways().communication.conversations<Conversation[]>();
+    if (!loaded.ok)
+      throw new Error(failureMessage(loaded, 'Nao foi possivel carregar as conversas.'));
+    const next = loaded.data;
     setConversations(next);
     if (preferredId) setSelectedId(preferredId);
   }
 
   useEffect(() => {
-    if (!isSupabaseConfigured) return;
+    if (!isConnected()) return;
     let active = true;
-    Promise.all([apiFetch('/communications/contacts'), apiFetch('/communications/conversations')])
-      .then(async ([contactsResponse, conversationsResponse]) => {
-        if (!contactsResponse.ok)
+    const { communication } = gateways();
+    Promise.all([
+      communication.contacts<Contact[]>(),
+      communication.conversations<Conversation[]>(),
+    ])
+      .then(([loadedContacts, loadedConversations]) => {
+        if (!loadedContacts.ok)
+          throw new Error(failureMessage(loadedContacts, 'Nao foi possivel carregar os contatos.'));
+        if (!loadedConversations.ok)
           throw new Error(
-            await apiError(contactsResponse, 'Nao foi possivel carregar os contatos.'),
+            failureMessage(loadedConversations, 'Nao foi possivel carregar as conversas.'),
           );
-        if (!conversationsResponse.ok)
-          throw new Error(
-            await apiError(conversationsResponse, 'Nao foi possivel carregar as conversas.'),
-          );
-        return Promise.all([
-          contactsResponse.json() as Promise<Contact[]>,
-          conversationsResponse.json() as Promise<Conversation[]>,
-        ]);
+        return [loadedContacts.data, loadedConversations.data] as const;
       })
       .then(([nextContacts, nextConversations]) => {
         if (!active) return;
@@ -136,13 +133,14 @@ export function CommunicationCenter({ role, requestedMode }: CommunicationCenter
       setMessages([]);
       return;
     }
-    if (!isSupabaseConfigured) return;
+    if (!isConnected()) return;
     let active = true;
-    apiFetch(`/communications/conversations/${selectedId}/messages`)
-      .then(async (response) => {
-        if (!response.ok)
-          throw new Error(await apiError(response, 'Nao foi possivel abrir a conversa.'));
-        return response.json() as Promise<Message[]>;
+    gateways()
+      .communication.messages<Message[]>(selectedId)
+      .then((result) => {
+        if (!result.ok)
+          throw new Error(failureMessage(result, 'Nao foi possivel abrir a conversa.'));
+        return result.data;
       })
       .then((nextMessages) => active && setMessages(nextMessages))
       .catch(
@@ -170,7 +168,7 @@ export function CommunicationCenter({ role, requestedMode }: CommunicationCenter
       setSelectedId(existing.id);
       return;
     }
-    if (!isSupabaseConfigured) {
+    if (!isConnected()) {
       const conversation = {
         id: `demo-${contact.id}`,
         kind: 'direct' as const,
@@ -185,14 +183,10 @@ export function CommunicationCenter({ role, requestedMode }: CommunicationCenter
     setBusy(true);
     setError('');
     try {
-      const response = await apiFetch('/communications/conversations', {
-        method: 'POST',
-        body: JSON.stringify({ participant_id: contact.id }),
-      });
-      if (!response.ok)
-        throw new Error(await apiError(response, 'Nao foi possivel iniciar a conversa.'));
-      const created = (await response.json()) as { id: string };
-      await loadConversations(created.id);
+      const created = await gateways().communication.startConversation<{ id: string }>(contact.id);
+      if (!created.ok)
+        throw new Error(failureMessage(created, 'Nao foi possivel iniciar a conversa.'));
+      await loadConversations(created.data.id);
     } catch (reason) {
       setError(reason instanceof Error ? reason.message : 'Nao foi possivel iniciar a conversa.');
     } finally {
@@ -207,7 +201,7 @@ export function CommunicationCenter({ role, requestedMode }: CommunicationCenter
     setBusy(true);
     setError('');
     try {
-      if (!isSupabaseConfigured) {
+      if (!isConnected()) {
         const now = new Date().toISOString();
         const mine: Message = {
           id: `demo-user-${Date.now()}`,
@@ -235,33 +229,23 @@ export function CommunicationCenter({ role, requestedMode }: CommunicationCenter
         return;
       }
       if (currentMode === 'ai') {
-        const response = await apiFetch('/communications/ai/messages', {
-          method: 'POST',
-          body: JSON.stringify({
-            body,
-            conversation_id: selectedId === 'ai-new' ? undefined : selectedId,
-          }),
-        });
-        if (!response.ok)
-          throw new Error(await apiError(response, 'O tutor nao conseguiu responder agora.'));
-        const result = (await response.json()) as {
+        const answered = await gateways().communication.askTutor<{
           conversation_id: string;
           user_message: Message;
           assistant_message: Message;
           suggested_questions: string[];
-        };
+        }>(body, selectedId === 'ai-new' ? undefined : selectedId);
+        if (!answered.ok)
+          throw new Error(failureMessage(answered, 'O tutor nao conseguiu responder agora.'));
+        const result = answered.data;
         setMessages((current) => [...current, result.user_message, result.assistant_message]);
         setSuggestions(result.suggested_questions);
         setSelectedId(result.conversation_id);
         await loadConversations(result.conversation_id);
       } else {
-        const response = await apiFetch(`/communications/conversations/${selectedId}/messages`, {
-          method: 'POST',
-          body: JSON.stringify({ body }),
-        });
-        if (!response.ok)
-          throw new Error(await apiError(response, 'Nao foi possivel enviar a mensagem.'));
-        const savedMessage = (await response.json()) as Message;
+        const sent = await gateways().communication.sendMessage<Message>(selectedId, body);
+        if (!sent.ok) throw new Error(failureMessage(sent, 'Nao foi possivel enviar a mensagem.'));
+        const savedMessage = sent.data;
         setMessages((current) => [...current, savedMessage]);
         await loadConversations(selectedId);
       }

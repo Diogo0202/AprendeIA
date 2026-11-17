@@ -53,9 +53,9 @@ O valor precisa corresponder à infraestrutura usada. Uma rede inválida faz o l
 ## Arquivos principais
 
 - `frontend/src/App.tsx` — formulários, mensagens e criação da sessão.
-- `frontend/src/lib/supabase.ts` — cliente público e leitura do token atual.
-- `backend/auth_security.py` — normalização, HMAC e identificação segura da rede.
-- `backend/main.py` — endpoint `/auth/login`, leitura da sessão e verificação do cargo.
+- `frontend/src/adapters/supabase/client.ts` — cliente público e leitura do token atual.
+- `backend/aprendeia/domain/login_protection.py` — normalização, HMAC e identificação segura da rede.
+- `backend/aprendeia/adapters/inbound/http/routers/access.py`, `backend/aprendeia/adapters/inbound/http/dependencies.py` e `backend/aprendeia/application/services/access.py` — endpoint `/auth/login`, leitura da sessão e verificação do cargo.
 - `supabase/migrations/20260911120000_teacher_registration_workflow.sql` — cadastro docente em duas etapas.
 - `supabase/migrations/20260913143000_login_rate_limit.sql` — contadores e funções atômicas.
 - `supabase/migrations/20260913150000_login_rate_limit_policy.sql` — política explícita da tabela privada.

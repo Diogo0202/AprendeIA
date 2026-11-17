@@ -1,7 +1,6 @@
 import { useEffect, useState } from 'react';
-import { apiFetch } from '../../lib/api';
-import { isSupabaseConfigured } from '../../lib/supabase';
-import type { StudentSubject } from '../../types/learning';
+import { gateways, isConnected } from '../../application/gateways';
+import type { StudentSubject } from '../../domain/learning';
 import { demoSubjects } from './demoData';
 import { Header } from '../layout/Chrome';
 
@@ -106,14 +105,15 @@ export function PracticeProfile({
   } | null>(null);
   const [loading, setLoading] = useState(false);
   const [practiceSubjects, setPracticeSubjects] = useState<string[]>(
-    isSupabaseConfigured ? [initialSubject] : demoSubjects.map((item) => item.name),
+    isConnected() ? [initialSubject] : demoSubjects.map((item) => item.name),
   );
 
   useEffect(() => {
-    if (!isSupabaseConfigured) return;
+    if (!isConnected()) return;
     let active = true;
-    apiFetch('/student/subjects')
-      .then((response) => (response.ok ? (response.json() as Promise<StudentSubject[]>) : []))
+    gateways()
+      .student.subjects<StudentSubject[]>()
+      .then((result) => (result.ok ? result.data : []))
       .then((items) => {
         if (active && Array.isArray(items)) setPracticeSubjects(items.map((item) => item.name));
       });
@@ -127,9 +127,9 @@ export function PracticeProfile({
     setSelected(null);
     setResult(null);
     try {
-      const response = await apiFetch(`/question-bank/next?subject=${encodeURIComponent(subject)}`);
-      if (!response.ok) throw new Error();
-      setQuestion(await response.json());
+      const next = await gateways().student.nextQuestion<Question>(subject);
+      if (!next.ok) throw new Error();
+      setQuestion(next.data);
     } catch {
       setQuestion(fallbackForSubject(subject));
     } finally {
@@ -140,12 +140,14 @@ export function PracticeProfile({
   async function submit() {
     if (selected === null) return;
     try {
-      const response = await apiFetch(`/question-bank/${question.id}/answer`, {
-        method: 'POST',
-        body: JSON.stringify({ selected_index: selected }),
-      });
-      if (!response.ok) throw new Error();
-      setResult(await response.json());
+      const answered = await gateways().student.answerQuestion<NonNullable<typeof result>>(
+        question.id,
+        {
+          selected_index: selected,
+        },
+      );
+      if (!answered.ok) throw new Error();
+      setResult(answered.data);
     } catch {
       // Sem resposta do servidor não tentamos corrigir no navegador: o gabarito
       // real fica só no backend para não virar dado fácil de inspecionar.

@@ -3,7 +3,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import { CommunicationCenter } from './CommunicationCenter';
 import { NavigationDock } from './NavigationDock';
 
-vi.mock('../lib/supabase', () => ({ isSupabaseConfigured: false }));
+vi.mock('../adapters/supabase/client', () => ({ isSupabaseConfigured: false }));
 afterEach(cleanup);
 
 describe('CommunicationCenter', () => {

@@ -6,9 +6,10 @@ from pathlib import Path
 from unittest.mock import Mock, patch
 
 sys.path.insert(0, str(Path(__file__).parent))
-from deployment_config import frontend_origin
-import main
-from fastapi import HTTPException
+from aprendeia.config.deployment import frontend_origin
+from aprendeia.adapters.outbound.email_delivery import email_configured
+from aprendeia.domain.errors import ServiceUnavailable
+from test_support import services_for, status_of
 
 
 class DeploymentConfigTests(unittest.TestCase):
@@ -30,17 +31,17 @@ class DeploymentConfigTests(unittest.TestCase):
     def test_https_email_does_not_require_smtp_credentials(self):
         with patch.dict('os.environ', {'EMAIL_TRANSPORT': 'resend',
                         'RESEND_API_KEY': 'test-key', 'EMAIL_FROM': 'sender@example.test'}, clear=True):
-            self.assertTrue(main.email_configured())
+            self.assertTrue(email_configured())
         with patch.dict('os.environ', {'EMAIL_TRANSPORT': 'resend'}, clear=True):
-            self.assertFalse(main.email_configured())
+            self.assertFalse(email_configured())
 
     def test_readiness_requires_new_schema_without_fetching_personal_records(self):
         db = Mock()
         query = db.table.return_value
         query.select.return_value = query
         query.limit.return_value = query
-        with patch('main.database', return_value=db), patch('main.supabase_configured', return_value=True), patch('main.captcha_required', return_value=False):
-            self.assertEqual(main.readiness()['status'], 'ready')
+        with patch('aprendeia.config.settings.supabase_configured', return_value=True), patch('aprendeia.adapters.outbound.turnstile.captcha_required', return_value=False):
+            self.assertEqual(services_for(db).health.readiness()['status'], 'ready')
         names = {call.args[0] for call in db.table.call_args_list}
         self.assertTrue({'email_deliveries', 'account_admissions', 'gamification_events'} <= names)
         self.assertTrue(all(call.args == (0,) for call in query.limit.call_args_list))
@@ -48,7 +49,7 @@ class DeploymentConfigTests(unittest.TestCase):
     def test_readiness_hides_missing_schema_details(self):
         db = Mock()
         db.table.side_effect = RuntimeError('private-schema-detail')
-        with patch('main.database', return_value=db), patch('main.supabase_configured', return_value=True), patch('main.captcha_required', return_value=False), self.assertRaises(HTTPException) as caught:
-            main.readiness()
-        self.assertEqual(caught.exception.status_code, 503)
+        with patch('aprendeia.config.settings.supabase_configured', return_value=True), patch('aprendeia.adapters.outbound.turnstile.captcha_required', return_value=False), self.assertRaises(ServiceUnavailable) as caught:
+            services_for(db).health.readiness()
+        self.assertEqual(status_of(caught.exception), 503)
         self.assertNotIn('private-schema-detail', caught.exception.detail)

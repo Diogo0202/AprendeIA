@@ -1,6 +1,14 @@
 import '@testing-library/jest-dom/vitest';
 import { beforeEach } from 'vitest';
-import { publishLegalDocuments } from '../lib/legalVersions';
+import { publishLegalDocuments } from '../adapters/http/legalVersions';
+import { provideGateways } from '../application/gateways';
+
+// Os testes usam os adaptadores reais e simulam só o cliente HTTP ou o Supabase abaixo deles.
+// O import tardio deixa cada arquivo registrar seus vi.mock antes de os adaptadores carregarem.
+beforeEach(async () => {
+  const { createGateways } = await import('../composition');
+  provideGateways(createGateways());
+});
 
 // Fixture isolada: produção recebe estas versões exclusivamente da API.
 beforeEach(() =>

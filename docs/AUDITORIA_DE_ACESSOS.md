@@ -37,8 +37,8 @@ Os registros e as evidências detalhadas de aceite expiram em até 7 dias. A mig
 
 ## Arquivos principais
 
-- `backend/access_audit.py` — catálogo das ações e montagem segura do evento;
-- `backend/main.py` — identificação do ator, middleware e rota administrativa;
+- `backend/aprendeia/domain/access_audit.py` — catálogo das ações e montagem segura do evento;
+- `backend/aprendeia/adapters/inbound/http/middleware.py`, `backend/aprendeia/adapters/inbound/http/support.py` e `backend/aprendeia/adapters/inbound/http/routers/administration.py` — middleware, identificação do ator e rota administrativa;
 - `frontend/src/components/admin/AuditLogPanel.tsx` — filtros e visualização;
 - `supabase/migrations/20260920120000_access_audit_logs.sql` — tabela, índices e isolamento;
 - `backend/test_access_audit.py` — cobertura das rotas e das regras de privacidade.

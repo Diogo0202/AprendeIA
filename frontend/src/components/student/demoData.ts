@@ -1,5 +1,5 @@
-import type { StudentSubject } from '../../types/learning';
-import type { GamificationSummary } from '../../types/app';
+import type { StudentSubject } from '../../domain/learning';
+import type { GamificationSummary } from '../../domain/app';
 
 // Esta reserva aparece apenas no modo de apresentação sem banco configurado.
 export const demoSubjects: StudentSubject[] = [

@@ -39,7 +39,7 @@ A saída estruturada é salva em `pedagogical_recommendations` para manter hist�
 
 ## Arquivos principais
 
-- `backend/main.py` — schemas, prompts, geração, seleção e correção.
+- `backend/aprendeia/application/services/question_bank.py` (geração, seleção e correção), `backend/aprendeia/adapters/outbound/openai_tutor.py` (schemas e prompts) e `backend/aprendeia/adapters/inbound/http/schemas.py` (entrada da API).
 - `frontend/src/App.tsx` — prática do aluno e recomendação docente.
 - `supabase/migrations/20260905192035_initial_learning_schema.sql` — questões, tentativas e dificuldades.
 - `supabase/migrations/20260909120000_teacher_dashboard.sql` — recomendações pedagógicas.

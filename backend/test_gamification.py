@@ -3,7 +3,7 @@
 import unittest
 from datetime import date
 
-from backend.gamification import (
+from aprendeia.domain.gamification import (
     build_gamification_summary,
     calculate_current_streak,
     can_feature_achievement,

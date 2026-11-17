@@ -31,7 +31,7 @@ O catálogo vem de `GET /student/subjects`. A resposta já junta `subjects`, `mo
 
 ## Gamificação
 
-As regras estão em `backend/gamification.py`:
+As regras estão em `backend/aprendeia/domain/gamification.py`:
 
 - 100 pontos por aula concluída;
 - 10 pontos por resposta correta;
@@ -57,10 +57,10 @@ O aluno consulta dados usando o ID do token, não um ID digitado na URL. Ele nã
 
 - `frontend/src/App.tsx` — coordenação de sessão, perfil e prática.
 - `frontend/src/components/student` — diagnóstico e leitura de aula.
-- `frontend/src/types/learning.ts` — contratos usados pelo catálogo e recomendações.
-- `backend/main.py` — rotas `/student/*` e rotas de prática.
-- `backend/learning_engine.py` — classificação e recomendações por tópico.
-- `backend/gamification.py` — cálculo de pontos e conquistas.
+- `frontend/src/domain/learning.ts` — contratos usados pelo catálogo e recomendações.
+- `backend/aprendeia/adapters/inbound/http/routers/learning.py` — rotas `/student/*` e de prática; regras em `backend/aprendeia/application/services/student_learning.py` e `backend/aprendeia/application/services/question_bank.py`.
+- `backend/aprendeia/domain/learning_engine.py` — classificação e recomendações por tópico.
+- `backend/aprendeia/domain/gamification.py` — cálculo de pontos e conquistas.
 - `supabase/migrations/20260908170000_student_gamification.sql` — registro dos dias ativos.
 - `supabase/migrations/20260914183000_student_profile_personalization.sql` — preferências visuais protegidas.
 - `supabase/migrations/20260918120000_learning_journey.sql` — diagnóstico, conteúdo das aulas e revisão de questões.

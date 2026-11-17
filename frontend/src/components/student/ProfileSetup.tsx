@@ -1,9 +1,9 @@
 import { FormEvent, useEffect, useState } from 'react';
 import FallbackAvatar, { type AvatarKey } from '../FallbackAvatar';
-import { apiFetch } from '../../lib/api';
-import { isSupabaseConfigured } from '../../lib/supabase';
-import type { AccentTheme, UserProfile, Achievement } from '../../types/app';
-import { applyAccentTheme } from '../../lib/theme';
+import { gateways, isConnected } from '../../application/gateways';
+import { failureMessage } from '../../application/result';
+import type { AccentTheme, UserProfile, Achievement } from '../../domain/app';
+import { applyAccentTheme } from '../../adapters/browser/theme';
 
 const avatarOptions: { id: AvatarKey; label: string }[] = [
   { id: 'orbit', label: 'Órbita' },
@@ -57,19 +57,14 @@ export function ProfileSetup({
     setSaving(true);
     setMessage('');
     try {
-      if (isSupabaseConfigured) {
-        const response = await apiFetch('/student/profile-personalization', {
-          method: 'PUT',
-          body: JSON.stringify({
-            avatar_key: avatarKey,
-            featured_badge_id: featuredBadgeId,
-            accent_theme: accentTheme,
-          }),
+      if (isConnected()) {
+        const saved = await gateways().student.personalize({
+          avatar_key: avatarKey,
+          featured_badge_id: featuredBadgeId,
+          accent_theme: accentTheme,
         });
-        if (!response.ok) {
-          const payload = (await response.json().catch(() => ({}))) as { detail?: string };
-          throw new Error(payload.detail || 'Não foi possível salvar sua personalização.');
-        }
+        if (!saved.ok)
+          throw new Error(failureMessage(saved, 'Não foi possível salvar sua personalização.'));
       }
       onSave({
         ...profile,

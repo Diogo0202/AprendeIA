@@ -14,7 +14,7 @@ Revisão integrada em 05/11/2026. Política 1.6, Termos de Uso 1.0 e direitos am
 | Canal de privacidade | Implementado local no texto | `dig.mendes.baptista@gmail.com`; operação, confirmação de identidade e prazo de resposta precisam de definição institucional. |
 | Finalidades e hipóteses legais | Pendente externo | Mapear cada finalidade, inclusive ranking e recursos de IA. Ciência obrigatória não serve de consentimento geral. |
 | Inventário de operadores e transferências | Pendente externo | Referências locais a Supabase, OpenAI e Turnstile; GA4 e Clarity condicionados à configuração aprovada. Confirmar fornecedores efetivamente ativos, SMTP, hospedagem, contratos e países de processamento. |
-| Crianças e adolescentes | Implementado local; externo pendente | `InstitutionalAdmission.tsx` e `backend/account_lifecycle.py` bloqueiam conforme resposta do servidor. Canal: `dig.mendes.baptista.mb@gmail.com`. Validar admissão publicada e hipótese legal com melhor interesse. |
+| Crianças e adolescentes | Implementado local; externo pendente | `InstitutionalAdmission.tsx` e `backend/aprendeia/domain/account_lifecycle.py` bloqueiam conforme resposta do servidor. Canal: `dig.mendes.baptista.mb@gmail.com`. Validar admissão publicada e hipótese legal com melhor interesse. |
 | Contas de teste | Implementado local; externo pendente | Contas student e teacher expiram 168 horas após a criação original; admin isento. Nova ciência e login não renovam o prazo. Verificar bloqueio remoto; expiração não significa exclusão. |
 | Auditoria e evidências de aceite | Implementado local; externo pendente | Migration de termos mantém versões e limpa horários após seis dias, dentro do limite de sete dias. Confirmar rotinas e agendamento no ambiente publicado. |
 | Retenção acadêmica e backups | Pendente externo | Prazos: [falta detalhe real]. Não há comprovação de exclusão em fornecedores nem em cópias externas. |
@@ -23,7 +23,7 @@ Revisão integrada em 05/11/2026. Política 1.6, Termos de Uso 1.0 e direitos am
 
 | Direito | Estado | Evidência e atendimento |
 | --- | --- | --- |
-| Acesso e correção | Implementado local; externo pendente | `PrivacyRequests.tsx` e `backend/privacy_requests.py` oferecem acesso em JSON e correção de nome, etapa e objetivo. Confirmar fluxo publicado. |
+| Acesso e correção | Implementado local; externo pendente | `PrivacyRequests.tsx` e `backend/aprendeia/application/services/account_rights.py` oferecem acesso em JSON e correção de nome, etapa e objetivo. Confirmar fluxo publicado. |
 | Anonimização e exclusão | Implementado local; externo pendente | Pedidos sujeitos a decisão administrativa, encerramento de conta e restrição para Storage. Confirmar que o encerramento preserva turmas e materiais sem professor, conforme o contrato atual. |
 | Confirmação da existência (`confirmation`) | Implementado local; operação externa pendente | Área Meus dados e canal de privacidade. Tipo presente na API e na migration de direitos; requer resposta administrativa. |
 | Informação sobre compartilhamento (`sharing`) | Implementado local; operação externa pendente | Informar entidades destinatárias a partir de inventário confirmado. |
@@ -33,13 +33,13 @@ Revisão integrada em 05/11/2026. Política 1.6, Termos de Uso 1.0 e direitos am
 | Revisão de decisões automatizadas (`automated_review`) | Implementado local; operação externa pendente | Canal recebe pedidos sobre decisões unicamente automatizadas que afetem interesses. Definir análise e informação sobre critérios. |
 | Bloqueio e informação sobre recusa | Assistido; operação pendente | Canal recebe pedido de bloqueio, dados excessivos e dúvidas sobre negar consentimento e suas consequências. |
 
-A API local inspecionada admite `access`, `correction`, `anonymization` e `deletion`, com os seis tipos assistidos descritos acima. `PrivacyRequests.tsx`, `backend/privacy_requests.py` e `20261109120000_extended_privacy_rights.sql` registram os novos pedidos. Concluir um pedido assistido registra a resposta; não altera automaticamente a sessão, o consentimento ou dados nos fornecedores. Oposição e revogação exigem confirmação administrativa MEDIDA CONFIRMADA. A operação assistida e a publicação ainda dependem de validação externa.
+A API local inspecionada admite `access`, `correction`, `anonymization` e `deletion`, com os seis tipos assistidos descritos acima. `PrivacyRequests.tsx`, `backend/aprendeia/application/services/account_rights.py` e `20261109120000_extended_privacy_rights.sql` registram os novos pedidos. Concluir um pedido assistido registra a resposta; não altera automaticamente a sessão, o consentimento ou dados nos fornecedores. Oposição e revogação exigem confirmação administrativa MEDIDA CONFIRMADA. A operação assistida e a publicação ainda dependem de validação externa.
 
 ## Cookies e medição em `/sobre`
 
 | Controle exigido pela política 1.6 | Estado observado | Evidência e pendência |
 | --- | --- | --- |
-| Supabase Auth separado da medição | Distinção implementada no texto | Sessão e credenciais no armazenamento do navegador, conforme `frontend/src/lib/supabase.ts`. Inventariar chaves e prazos reais no ambiente publicado. |
+| Supabase Auth separado da medição | Distinção implementada no texto | Sessão e credenciais no armazenamento do navegador, conforme `frontend/src/adapters/supabase/client.ts`. Inventariar chaves e prazos reais no ambiente publicado. |
 | Turnstile separado da medição | Distinção implementada no texto | `TurnstileWidget.tsx` carrega a verificação Cloudflare nos formulários. Confirmar configuração e tratamento técnico pelo fornecedor. |
 | GA4 para estatísticas | Implementado local; externo pendente | `lib/tracking.ts` confere flag, aprovação e ID; exige escolha de estatísticas. Confirmar configuração e eventos reais na rede. |
 | Clarity para session replay | Implementado local; externo pendente | `lib/tracking.ts` confere flag, aprovação e ID; exige escolha de gravação separada do GA4. O carregador legado foi removido. Confirmar projeto e mascaramento reais. |

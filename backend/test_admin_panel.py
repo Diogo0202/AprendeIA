@@ -12,7 +12,11 @@ from fastapi import FastAPI, HTTPException
 from fastapi.testclient import TestClient
 
 sys.path.insert(0, os.path.dirname(__file__))
-from admin_panel import MIN_GROUP_SIZE, build_performance, register_admin_panel_routes, summarize_group
+from aprendeia.adapters.inbound.http.dependencies import require_role
+from aprendeia.adapters.inbound.http.routers import administration
+from aprendeia.bootstrap import registered_routes
+from aprendeia.domain.admin_performance import MIN_GROUP_SIZE, build_performance, summarize_group
+from test_support import route_app
 
 NOW = datetime(2026, 11, 5, 12, tzinfo=timezone.utc)  # quinta-feira
 
@@ -143,10 +147,10 @@ class RouteTests(unittest.TestCase):
                 raise HTTPException(403, "Somente administração.")
             return self.admin
 
-        app = FastAPI()
-        register_admin_panel_routes(
-            app, database=lambda: self.db, admin_dependency=admin_only,
+        app = route_app(
+            administration.router, database=lambda: self.db,
             enforce_limit=self.limit, identity_hash=lambda email: "f" * 64,
+            overrides={require_role("admin"): admin_only},
         )
         self.client = TestClient(app)
 
@@ -211,7 +215,7 @@ class RouteTests(unittest.TestCase):
 
 class AuditTests(unittest.TestCase):
     def test_deletion_audit_keeps_role_and_reason_only(self):
-        from access_audit import AUDIT_ACTIONS, build_access_audit_record
+        from aprendeia.domain.access_audit import AUDIT_ACTIONS, build_access_audit_record
 
         self.assertEqual(AUDIT_ACTIONS[("POST", "/admin/users/{user_id}/delete")], "DELETE_USER")
         record = build_access_audit_record(
@@ -223,9 +227,7 @@ class AuditTests(unittest.TestCase):
         self.assertIsNone(record["resource_id"])
 
     def test_audit_log_route_filters_by_user(self):
-        from main import app
-
-        route = next(r for r in app.routes if getattr(r, "path", None) == "/admin/audit-logs")
+        route = next(r for r in registered_routes() if getattr(r, "path", None) == "/admin/audit-logs")
         self.assertIn("user_id", {param.name for param in route.dependant.query_params})
 
     def test_migration_blocks_admin_targets_and_requires_confirmation(self):

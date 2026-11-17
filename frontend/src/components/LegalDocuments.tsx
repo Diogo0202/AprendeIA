@@ -1,6 +1,6 @@
 import { useEffect, useId, useRef, useState } from 'react';
 import { PrivacyPolicyContent } from './PrivacyPolicyAccess';
-import { legalDocumentLabel, useCurrentLegalDocuments } from '../lib/legalVersions';
+import { legalDocumentLabel, useCurrentLegalDocuments } from '../adapters/http/legalVersions';
 
 const LGPD_URL = 'https://www.planalto.gov.br/ccivil_03/_ato2015-2018/2018/lei/l13709.htm';
 

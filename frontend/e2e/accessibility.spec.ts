@@ -15,7 +15,7 @@ async function mount(page: Page, screen: string) {
   await page.route('**/*', async (route) => {
     const url = new URL(route.request().url());
     if (!['127.0.0.1', 'localhost'].includes(url.hostname)) return route.abort();
-    if (url.pathname === '/src/lib/supabase.ts')
+    if (url.pathname === '/src/adapters/supabase/client.ts')
       return route.fulfill({
         contentType: 'text/javascript',
         body: 'export const supabase=null;export const isSupabaseConfigured=false;export const apiUrl="/isolated-api";export const turnstileSiteKey="";export async function accessToken(){return null}',
@@ -28,7 +28,7 @@ async function mount(page: Page, screen: string) {
         response,
         body:
           (await response.text()) +
-          '\nexport {Login,Signup,ForgotPassword,ResetPassword,StudentProfile,TeacherProfile,AdminProfile,initialProfile};',
+          '\nexport {Login,Signup,ForgotPassword,ResetPassword,StudentProfile,TeacherProfile,AdminProfile};',
       });
     }
     if (url.pathname === '/__accessibility__')
@@ -52,7 +52,12 @@ async function mount(page: Page, screen: string) {
     const dom = await load('/node_modules/.vite/deps/react-dom_client.js');
     const { createRoot } = dom.default ?? dom;
     await load('/src/index.css');
+    // Mesmas portas do main.tsx: as telas não montam sem elas.
+    const { provideGateways } = await load('/src/application/gateways.ts');
+    const { createGateways } = await load('/src/composition.ts');
+    provideGateways(createGateways());
     const app = await load('/src/App.tsx');
+    const { initialProfile } = await load('/src/components/auth/demoProfile.ts');
     const noop = () => {};
     const props = {
       onSubmit: (e: Event) => e.preventDefault(),
@@ -65,7 +70,7 @@ async function mount(page: Page, screen: string) {
       onProfileChange: noop,
       onChangePassword: noop,
       onPractice: noop,
-      profile: { ...app.initialProfile, profileSetupComplete: true },
+      profile: { ...initialProfile, profileSetupComplete: true },
     };
     const component = React.createElement(app[screen], props);
     createRoot(document.getElementById('fixture')).render(
@@ -268,7 +273,7 @@ for (const path of ['/', '/sobre'])
         external.push(url.origin);
         return route.abort();
       }
-      if (url.pathname === '/src/lib/supabase.ts')
+      if (url.pathname === '/src/adapters/supabase/client.ts')
         return route.fulfill({
           contentType: 'text/javascript',
           body: 'export const supabase=null;export const isSupabaseConfigured=false;export const apiUrl="/isolated-api";export const turnstileSiteKey="";export async function accessToken(){return null}',

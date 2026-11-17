@@ -18,7 +18,7 @@ O token efêmero `github.token` recebe `contents: read` e `issues: write`. Habil
 
 ## Critérios de resposta
 
-O backend precisa responder HTTP 2xx, `application/json`, `status: "ready"` e `service: "aprendeIA"`, conforme `readiness()` em `backend/main.py`. Os campos de configuração de IA e CAPTCHA não condicionam esse critério. O endpoint atual consulta tabelas do banco; a resposta não comprova o funcionamento de todos os recursos do produto.
+O backend precisa responder HTTP 2xx, `application/json`, `status: "ready"` e `service: "aprendeIA"`, conforme `HealthService.readiness()` em `backend/aprendeia/application/services/access.py`. Os campos de configuração de IA e CAPTCHA não condicionam esse critério. O endpoint atual consulta tabelas do banco; a resposta não comprova o funcionamento de todos os recursos do produto.
 
 O frontend precisa responder HTTP 2xx e `text/html`, com título AprendeIA, `div` de id `root` e script de módulo. Comentários e conteúdo de scripts não comprovam o elemento root. Títulos comuns de proteção ou autenticação externa e campos de senha invalidam a resposta. Um HTTP 200 genérico falha. Essa checagem do HTML inicial não executa JavaScript nem valida navegação autenticada.
 

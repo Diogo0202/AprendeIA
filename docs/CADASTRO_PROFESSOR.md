@@ -28,7 +28,7 @@ O cadastro docente acontece em duas etapas para não deixar qualquer pessoa marc
 ## Arquivos principais
 
 - `frontend/src/App.tsx`: escolha do perfil, tela pendente e fila da administração.
-- `backend/main.py`: listagem e aprovação protegidas por cargo.
+- `backend/aprendeia/adapters/inbound/http/routers/administration.py` e `backend/aprendeia/application/services/administration.py`: listagem e aprovação protegidas por cargo.
 - `supabase/migrations/20260911120000_teacher_registration_workflow.sql`:
   estado da solicitação, gatilho e aprovação transacional.
 

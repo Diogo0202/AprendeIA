@@ -13,7 +13,12 @@ from fastapi.testclient import TestClient
 from pydantic import ValidationError
 
 sys.path.insert(0, os.path.dirname(__file__))
-from privacy_requests import PrivacyRequestCreate, PrivacyRequestResolve, register_privacy_routes, personal_export
+from aprendeia.adapters.inbound.http.dependencies import current_user_pending_privacy, require_role
+from aprendeia.adapters.inbound.http.routers import account_rights
+from aprendeia.adapters.inbound.http.schemas import PrivacyRequestCreate, PrivacyRequestResolve
+from aprendeia.adapters.outbound.supabase.management import personal_export
+from aprendeia.bootstrap import registered_routes
+from test_support import route_app
 
 
 class Query:
@@ -102,11 +107,10 @@ class PrivacyRequestTests(unittest.TestCase):
                 raise HTTPException(403, "Somente administração.")
             return self.user
 
-        app = FastAPI()
-        register_privacy_routes(
-            app,
-            database=lambda: self.db, user_dependency=lambda: self.user, admin_dependency=admin,
-            enforce_limit=self.limit, identity_hash=lambda _email: "a" * 64,
+        app = route_app(
+            account_rights.router,
+            database=lambda: self.db, enforce_limit=self.limit, identity_hash=lambda _email: "a" * 64,
+            overrides={current_user_pending_privacy: lambda: self.user, require_role("admin"): admin},
         )
         self.client = TestClient(app)
 
@@ -130,8 +134,7 @@ class PrivacyRequestTests(unittest.TestCase):
 
     def test_rights_are_available_even_without_current_policy_acceptance(self):
         self.assertEqual(self.client.get("/privacy/requests").status_code, 200)
-        from main import app, current_user_pending_privacy
-        route = next(route for route in app.routes if route.path == "/privacy/requests" and "GET" in route.methods)
+        route = next(route for route in registered_routes() if route.path == "/privacy/requests" and "GET" in route.methods)
         self.assertIs(route.dependant.dependencies[0].call, current_user_pending_privacy)
 
     def test_listing_never_returns_other_users_request(self):
@@ -143,7 +146,7 @@ class PrivacyRequestTests(unittest.TestCase):
     def test_main_routes_require_an_authenticated_session(self):
         from main import app
         from unittest.mock import patch
-        with patch("main.supabase_configured", return_value=True), patch("main.persist_access_audit"):
+        with patch("aprendeia.config.settings.supabase_configured", return_value=True), patch("aprendeia.adapters.outbound.supabase.security.persist_access_audit"):
             self.assertEqual(TestClient(app).get("/privacy/requests").status_code, 401)
 
     def test_export_cannot_cross_user_boundary_or_bypass_review(self):

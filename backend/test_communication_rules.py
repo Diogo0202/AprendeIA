@@ -4,7 +4,7 @@ import unittest
 
 sys.path.insert(0, os.path.dirname(__file__))
 
-from communication_rules import can_start_direct_conversation, direct_conversation_key, validate_message_body
+from aprendeia.domain.communication_rules import can_start_direct_conversation, direct_conversation_key, validate_message_body
 
 
 class CommunicationRulesTests(unittest.TestCase):

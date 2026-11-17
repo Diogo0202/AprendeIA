@@ -7,12 +7,14 @@ from pydantic import ValidationError
 
 sys.path.insert(0, os.path.dirname(__file__))
 
-from main import AICommunicationRequest, app, require_role
+from aprendeia.adapters.inbound.http.schemas import AICommunicationRequest
+from aprendeia.bootstrap import registered_routes
+from test_support import status_of
 
 
 class CommunicationsSecurityTests(unittest.TestCase):
     def test_administration_uses_human_chat_but_not_the_ai_tutor(self):
-        paths = {route.path for route in app.routes}
+        paths = {route.path for route in registered_routes()}
         expected = {
             "/communications/contacts",
             "/communications/conversations",
@@ -22,15 +24,15 @@ class CommunicationsSecurityTests(unittest.TestCase):
         self.assertTrue(expected.issubset(paths))
 
         def roles_for(path, method):
-            route = next(r for r in app.routes if getattr(r, "path", None) == path and method in r.methods)
-            dependency = route.dependant.dependencies[-1].call
+            route = next(r for r in registered_routes() if getattr(r, "path", None) == path and method in r.methods)
+            dependency = route.dependant.dependencies[0].call
             allowed = []
             for role in ("student", "teacher", "admin"):
                 try:
                     dependency({"role": role})
                     allowed.append(role)
                 except Exception as error:
-                    self.assertEqual(error.status_code, 403)
+                    self.assertEqual(status_of(error), 403)
             return allowed
 
         self.assertEqual(roles_for("/communications/contacts", "GET"), ["student", "teacher", "admin"])

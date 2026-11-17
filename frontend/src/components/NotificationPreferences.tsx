@@ -1,6 +1,6 @@
 import { FormEvent, useEffect, useId, useState } from 'react';
-import { apiError, apiFetch } from '../lib/api';
-import { isSupabaseConfigured } from '../lib/supabase';
+import { gateways, isConnected } from '../application/gateways';
+import { failureMessage } from '../application/result';
 
 type Preferences = {
   email_difficulty_alerts: boolean;
@@ -12,23 +12,23 @@ const defaults: Preferences = { email_difficulty_alerts: true, email_weekly_summ
 export function NotificationPreferences() {
   const headingId = useId();
   const [preferences, setPreferences] = useState<Preferences>(defaults);
-  const [loading, setLoading] = useState(isSupabaseConfigured);
+  const [loading, setLoading] = useState(isConnected());
   const [loaded, setLoaded] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
   const [message, setMessage] = useState('');
 
   useEffect(() => {
-    if (!isSupabaseConfigured) return;
+    if (!isConnected()) return;
     const controller = new AbortController();
     void (async () => {
       try {
-        const response = await apiFetch('/teacher/notification-preferences', {
-          signal: controller.signal,
-        });
-        if (!response.ok)
-          throw new Error(await apiError(response, 'Não foi possível carregar as preferências.'));
-        const data = (await response.json()) as Preferences;
+        const result = await gateways().teacher.notificationPreferences<Preferences>(
+          controller.signal,
+        );
+        if (!result.ok)
+          throw new Error(failureMessage(result, 'Não foi possível carregar as preferências.'));
+        const data = result.data;
         if (controller.signal.aborted) return;
         setPreferences({
           email_difficulty_alerts: data.email_difficulty_alerts,
@@ -54,12 +54,9 @@ export function NotificationPreferences() {
     setError('');
     setMessage('');
     try {
-      const response = await apiFetch('/teacher/notification-preferences', {
-        method: 'PUT',
-        body: JSON.stringify(preferences),
-      });
-      if (!response.ok)
-        throw new Error(await apiError(response, 'Não foi possível salvar as preferências.'));
+      const saved = await gateways().teacher.saveNotificationPreferences(preferences);
+      if (!saved.ok)
+        throw new Error(failureMessage(saved, 'Não foi possível salvar as preferências.'));
       setMessage('Preferências salvas.');
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : 'Não foi possível salvar as preferências.');
@@ -80,7 +77,7 @@ export function NotificationPreferences() {
           próximos envios.
         </p>
       </div>
-      {!isSupabaseConfigured && (
+      {!isConnected() && (
         <p className="form-message">Conecte o Supabase para salvar suas preferências.</p>
       )}
       <form onSubmit={(event) => void save(event)}>

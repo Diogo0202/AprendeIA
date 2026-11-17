@@ -5,11 +5,15 @@ import uuid
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
-from fastapi import HTTPException
+from aprendeia.domain.errors import ApplicationError
 
 sys.path.insert(0, os.path.dirname(__file__))
 
-from main import DiagnosticAnswerRequest, answer_student_diagnostic, require_role
+from aprendeia.adapters.inbound.http.dependencies import require_role
+from aprendeia.adapters.inbound.http.schemas import DiagnosticAnswerRequest
+from test_support import services_for, status_of
+
+OPEN_SESSION = "aprendeia.adapters.outbound.supabase.learning.SupabaseDiagnostics.open_session"
 
 ROOT = Path(__file__).resolve().parents[1]
 
@@ -22,9 +26,9 @@ class PendingTeacherTests(unittest.TestCase):
     def test_pending_teacher_cannot_use_student_routes(self):
         dependency = require_role("student")
         pending = {"id": "u", "role": "student", "registration_status": "pending_teacher"}
-        with self.assertRaises(HTTPException) as raised:
+        with self.assertRaises(ApplicationError) as raised:
             dependency(pending)
-        self.assertEqual(raised.exception.status_code, 403)
+        self.assertEqual(status_of(raised.exception), 403)
 
     def test_active_student_keeps_access(self):
         dependency = require_role("student")
@@ -47,12 +51,14 @@ class DiagnosticRaceTests(unittest.TestCase):
         db.table.return_value = chain
         session = {"id": "s", "question_ids": [str(question_id)]}
         payload = DiagnosticAnswerRequest(selected_index=1, response_time_seconds=5)
-        with patch("main.database", return_value=db), \
-                patch("main.enforce_api_rate_limit"), \
-                patch("main.open_diagnostic_session", return_value=session):
-            with self.assertRaises(HTTPException) as raised:
-                answer_student_diagnostic(question_id, payload, {"id": "u"})
-        self.assertEqual(raised.exception.status_code, 409)
+        with patch(OPEN_SESSION, return_value=session):
+            with self.assertRaises(ApplicationError) as raised:
+                services_for(db).diagnostics.answer(
+                    {"id": "u"}, str(question_id),
+                    selected_index=payload.selected_index,
+                    response_time_seconds=payload.response_time_seconds,
+                )
+        self.assertEqual(status_of(raised.exception), 409)
 
 
 class DeploymentAndSchemaTests(unittest.TestCase):

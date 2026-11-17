@@ -5,14 +5,18 @@ import unittest
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from types import SimpleNamespace
-from unittest.mock import Mock
+from unittest.mock import Mock, patch
 from uuid import uuid4
 
 from fastapi import FastAPI, HTTPException
 from fastapi.testclient import TestClient
 
 sys.path.insert(0, str(Path(__file__).parent))
-from account_lifecycle import account_status, check_access, register_lifecycle_routes
+from aprendeia.adapters.inbound.http.dependencies import current_user_pending_privacy, require_role
+from aprendeia.adapters.inbound.http.routers import account_rights
+from aprendeia.domain.account_lifecycle import account_status, check_access
+from aprendeia.domain.errors import ApplicationError
+from test_support import route_app, status_of
 
 
 class LifecycleTests(unittest.TestCase):
@@ -33,9 +37,9 @@ class LifecycleTests(unittest.TestCase):
     def test_no_profile_created_at_or_expires_at_fallback(self):
         for bad in (None, "bad", "2026-01-01", "2026-01-01T10:00:00", 42):
             self.user.update(auth_created_at=bad, created_at=self.now.isoformat(), account_expires_at="2099-01-01")
-            with self.assertRaises(HTTPException) as error:
+            with self.assertRaises(ApplicationError) as error:
                 check_access(self.user)
-            self.assertEqual(error.exception.status_code, 503)
+            self.assertEqual(status_of(error.exception), 503)
 
     def test_future_clock_fails_closed(self):
         self.user["auth_created_at"] = (self.now + timedelta(hours=1)).isoformat()
@@ -80,11 +84,14 @@ class RouteTests(unittest.TestCase):
                 raise HTTPException(403, "Admin exigido")
             return {"id": str(uuid4()), "role": "admin"}
 
-        app = FastAPI()
-        register_lifecycle_routes(app, database=lambda: self.db, user_dependency=user,
-                                  admin_dependency=admin, enforce_limit=self.limit,
-                                  retention_secret=lambda: self.secret,
-                                  retention_enabled=lambda: self.enabled)
+        secret = patch("aprendeia.config.settings.account_retention_secret", side_effect=lambda: self.secret)
+        secret.start()
+        self.addCleanup(secret.stop)
+        app = route_app(
+            account_rights.router, database=lambda: self.db, enforce_limit=self.limit,
+            retention_enabled=lambda: self.enabled,
+            overrides={current_user_pending_privacy: user, require_role("admin"): admin},
+        )
         self.client = TestClient(app)
 
     def test_status_expired_pending_and_self_metadata_only(self):

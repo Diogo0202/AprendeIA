@@ -1,7 +1,7 @@
 import { expect, test } from '@playwright/test';
 
 async function isolate(page: import('@playwright/test').Page, status = 200) {
-  await page.route('**/src/lib/supabase.ts', (route) =>
+  await page.route('**/src/adapters/supabase/client.ts', (route) =>
     route.fulfill({
       contentType: 'text/javascript',
       body: 'export const supabase=null; export const isSupabaseConfigured=false; export const apiUrl="/isolated-api"; export const turnstileSiteKey=""; export async function accessToken(){return null}',

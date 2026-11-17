@@ -12,7 +12,12 @@ from fastapi import FastAPI, Header, HTTPException
 from fastapi.testclient import TestClient
 
 sys.path.insert(0, os.path.dirname(__file__))
-from leaderboard import LEADERBOARD_RATE_LIMITS, persistent_summary, read_summary, register_leaderboard_routes
+from aprendeia.adapters.inbound.http.dependencies import require_role
+from aprendeia.adapters.inbound.http.routers import learning
+from aprendeia.adapters.outbound.supabase.learning import read_summary
+from aprendeia.domain.errors import ApplicationError
+from aprendeia.domain.rate_limits import LEADERBOARD_RATE_LIMITS
+from test_support import route_app, status_of
 
 
 class RPCError(Exception):
@@ -70,9 +75,10 @@ class LeaderboardTests(unittest.TestCase):
                 raise HTTPException(403, "Somente professores.")
             return user
 
-        app = FastAPI()
-        register_leaderboard_routes(app, database=lambda: self.db, student_dependency=student,
-                                    teacher_dependency=teacher, enforce_limit=self.limit)
+        app = route_app(
+            learning.router, database=lambda: self.db, enforce_limit=self.limit,
+            overrides={require_role("student"): student, require_role("teacher"): teacher},
+        )
         self.client = TestClient(app)
         self.headers = {"Authorization": "Bearer student"}
         self.teacher_headers = {"Authorization": "Bearer teacher"}
@@ -272,22 +278,21 @@ class LeaderboardTests(unittest.TestCase):
     def test_summary_preserves_entire_trusted_payload(self):
         self.db.payload = {"points": 100, "achievements": [{"id": "new_server_badge", "bonus_xp": 42}],
                            "future_field": {"version": 2}, "weekly_xp": 50, "school_opt_in": False}
-        for adapter in (read_summary, persistent_summary):
-            self.assertEqual(adapter(self.db, self.student_id), self.db.payload)
-            self.assertEqual(self.db.calls[-1], ("gamification_summary", {"p_actor": self.student_id}))
+        self.assertEqual(read_summary(self.db, self.student_id), self.db.payload)
+        self.assertEqual(self.db.calls[-1], ("gamification_summary", {"p_actor": self.student_id}))
         self.db.payload = [self.db.payload]
         self.assertEqual(read_summary(self.db, self.student_id), self.db.payload[0])
 
     def test_summary_malformed_or_unavailable_fails_closed(self):
         for payload in (None, [], "bad", [{}, {}]):
             self.db.payload = payload
-            with self.assertRaises(HTTPException) as caught:
-                persistent_summary(self.db, self.student_id)
-            self.assertEqual(caught.exception.status_code, 503)
+            with self.assertRaises(ApplicationError) as caught:
+                read_summary(self.db, self.student_id)
+            self.assertEqual(status_of(caught.exception), 503)
         self.db.error = RPCError("PT403")
-        with self.assertRaises(HTTPException) as caught:
+        with self.assertRaises(ApplicationError) as caught:
             read_summary(self.db, self.student_id)
-        self.assertEqual(caught.exception.status_code, 403)
+        self.assertEqual(status_of(caught.exception), 403)
         self.assertNotIn("private", str(caught.exception.detail))
 
 

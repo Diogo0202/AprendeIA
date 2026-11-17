@@ -9,7 +9,7 @@ from types import SimpleNamespace
 import unittest
 from unittest.mock import MagicMock, Mock, patch
 
-from backend import email_delivery as delivery
+from aprendeia.adapters.outbound import email_delivery as delivery
 
 CONFIG = delivery.SMTPConfig('smtp.example.test', 465, 'user', 'secret', 'sender@example.test')
 PANEL = 'https://aprendeia.example/'

@@ -12,7 +12,7 @@ A tela inicial do estudante transforma o progresso já salvo no sistema em sinai
 | Questão respondida corretamente | 10 XP |
 | Dia com atividade | 20 XP |
 
-O nível começa no 1 e sobe a cada 250 XP. O cálculo acontece em `backend/gamification.py`; o frontend só recebe o resumo pronto em `GET /student/gamification`.
+O nível começa no 1 e sobe a cada 250 XP. O cálculo acontece em `backend/aprendeia/domain/gamification.py`; o frontend só recebe o resumo pronto em `GET /student/gamification`.
 
 ## Conquistas disponíveis
 

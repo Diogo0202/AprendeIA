@@ -34,7 +34,7 @@ Todas exigem JWT válido, perfil de aluno ou professor e são registradas na aud
 
 ## Proteção contra prompt injection
 
-O arquivo `backend/ai_security.py` aplica quatro cuidados juntos:
+O arquivo `backend/aprendeia/domain/ai_security.py` aplica quatro cuidados juntos:
 
 1. normaliza Unicode e recusa caracteres de controle;
 2. bloqueia tentativas explícitas de substituir ou revelar instruções internas;

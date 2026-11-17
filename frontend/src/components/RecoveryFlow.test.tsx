@@ -12,7 +12,7 @@ const auth = vi.hoisted(() => ({
   unsubscribe: vi.fn(),
   single: vi.fn(),
 }));
-vi.mock('../lib/supabase', () => ({
+vi.mock('../adapters/supabase/client', () => ({
   apiUrl: 'http://localhost:8000',
   isSupabaseConfigured: true,
   turnstileSiteKey: 'public-test-key',

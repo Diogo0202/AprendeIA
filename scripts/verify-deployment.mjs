@@ -85,21 +85,34 @@ export async function checkRailway(config, fetchImpl = fetch) {
   return null;
 }
 
-export async function verifyDeployments({ env = process.env, fetchImpl = fetch, sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms)), now = Date.now, log = console.log } = {}) {
+const POLL_INTERVAL_MS = 10000;
+const wait = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+
+/** Consulta os dois provedores até ambos confirmarem o SHA esperado ou o prazo acabar. */
+export async function verifyDeployments({
+  env = process.env,
+  fetchImpl = fetch,
+  sleep = wait,
+  now = Date.now,
+  log = console.log,
+} = {}) {
   const config = readConfig(env);
   const deadline = now() + config.waitMs;
-  let vercel;
-  let railway;
-  do {
-    [vercel, railway] = await Promise.all([checkVercel(config, fetchImpl), checkRailway(config, fetchImpl)]);
+  for (;;) {
+    const [vercel, railway] = await Promise.all([
+      checkVercel(config, fetchImpl),
+      checkRailway(config, fetchImpl),
+    ]);
     if (vercel && railway) {
       log(JSON.stringify({ expectedSha: config.EXPECTED_SHA, deployments: [vercel, railway] }));
       return 0;
     }
-    if (now() >= deadline) break;
-    await sleep(Math.min(10000, deadline - now()));
-  } while (true);
-  throw new Error(`Deploy terminal do SHA esperado não confirmado em: ${[!vercel && "Vercel", !railway && "Railway"].filter(Boolean).join(", ")}.`);
+    if (now() >= deadline) {
+      const pending = [!vercel && "Vercel", !railway && "Railway"].filter(Boolean).join(", ");
+      throw new Error(`Deploy terminal do SHA esperado não confirmado em: ${pending}.`);
+    }
+    await sleep(Math.min(POLL_INTERVAL_MS, deadline - now()));
+  }
 }
 
 if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {

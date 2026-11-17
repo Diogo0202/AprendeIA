@@ -4,10 +4,14 @@ import './index.css';
 import App from './App';
 import { CookieConsent } from './components/CookieConsent';
 import { AboutPage } from './components/AboutPage';
-import { verifyPublicGuest } from './lib/tracking';
-import { apiUrl, supabase } from './lib/supabase';
-import { loadLegalDocuments } from './lib/legalVersions';
+import { verifyPublicGuest } from './adapters/browser/tracking';
+import { apiUrl, supabase } from './adapters/supabase/client';
+import { loadLegalDocuments } from './adapters/http/legalVersions';
+import { provideGateways } from './application/gateways';
+import { createGateways } from './composition';
 
+// As telas recebem as portas já ligadas aos adaptadores.
+provideGateways(createGateways());
 void loadLegalDocuments(apiUrl);
 
 const about = window.location.pathname === '/sobre';

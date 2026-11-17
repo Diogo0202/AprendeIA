@@ -108,6 +108,43 @@ export function isAppHtml(html) {
   );
 }
 
+const JSON_CONTENT = /^application\/json(?:\s*;|$)/i;
+const HTML_CONTENT = /^text\/html(?:\s*;|$)/i;
+
+/** Só aceita um status HTTP válido; qualquer outro valor vira ausência de status. */
+function httpStatus(response) {
+  const { status } = response;
+  return Number.isInteger(status) && status >= 100 && status <= 599 ? status : null;
+}
+
+/** O ID da requisição só entra no relatório quando tem formato de UUID. */
+function traceableRequestId(response) {
+  const id = response.headers.get("x-request-id");
+  return id && UUID.test(id) ? id : undefined;
+}
+
+function assertSuccessfulStatus(status) {
+  if (status >= 300 && status < 400) throw new Failure("redirect");
+  if (!status || status < 200 || status >= 300) throw new Failure("http");
+}
+
+/** A API precisa responder JSON com o contrato de prontidão do backend. */
+function assertReadyApi(contentType, body) {
+  if (!JSON_CONTENT.test(contentType)) throw new Failure("content");
+  let payload;
+  try {
+    payload = JSON.parse(body);
+  } catch {
+    throw new Failure("content");
+  }
+  if (payload?.status !== "ready" || payload?.service !== "aprendeIA") throw new Failure("content");
+}
+
+/** O frontend precisa responder HTML da própria aplicação, não uma página genérica. */
+function assertAppPage(contentType, body) {
+  if (!HTML_CONTENT.test(contentType) || !isAppHtml(body)) throw new Failure("content");
+}
+
 export async function probe(
   service,
   target,
@@ -131,39 +168,15 @@ export async function probe(
         redirect: "manual",
         credentials: "omit",
         signal,
-        headers: {
-          accept: service === "api" ? "application/json" : "text/html",
-        },
+        headers: { accept: service === "api" ? "application/json" : "text/html" },
       });
-      status =
-        Number.isInteger(response.status) &&
-        response.status >= 100 &&
-        response.status <= 599
-          ? response.status
-          : null;
-      const id = response.headers.get("x-request-id");
-      if (id && UUID.test(id)) requestId = id;
-      if (status >= 300 && status < 400) throw new Failure("redirect");
-      if (!status || status < 200 || status >= 300) throw new Failure("http");
+      status = httpStatus(response);
+      requestId = traceableRequestId(response);
+      assertSuccessfulStatus(status);
       const contentType = response.headers.get("content-type") ?? "";
       const body = await readBody(response);
-      if (service === "api") {
-        if (!/^application\/json(?:\s*;|$)/i.test(contentType))
-          throw new Failure("content");
-        let payload;
-        try {
-          payload = JSON.parse(body);
-        } catch {
-          throw new Failure("content");
-        }
-        if (payload?.status !== "ready" || payload?.service !== "aprendeIA")
-          throw new Failure("content");
-      } else if (
-        !/^text\/html(?:\s*;|$)/i.test(contentType) ||
-        !isAppHtml(body)
-      ) {
-        throw new Failure("content");
-      }
+      if (service === "api") assertReadyApi(contentType, body);
+      else assertAppPage(contentType, body);
     }, timeoutMs);
   } catch (error) {
     reason =

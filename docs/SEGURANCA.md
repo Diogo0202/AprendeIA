@@ -52,7 +52,7 @@ A recuperação usa Supabase Auth, resposta neutra para evitar enumeração de c
 - `OPENAI_API_KEY`
 - `SMTP_PASSWORD`
 - `WEEKLY_SUMMARY_CRON_SECRET`
-- `TURNSTILE_SECRET_KEY` (backend, lida em `backend/captcha.py`)
+- `TURNSTILE_SECRET_KEY` (backend, lida em `backend/aprendeia/adapters/outbound/turnstile.py`)
 
 Nenhum desses valores deve entrar no frontend, README, migration, log ou commit.
 

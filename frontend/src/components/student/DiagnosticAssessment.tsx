@@ -1,6 +1,11 @@
-import { useMemo, useState } from "react";
-import { apiError, apiFetch } from "../../lib/api";
-import type { DiagnosticState, LearningRecommendations, PublicQuestion } from "../../types/learning";
+import { useMemo, useState } from 'react';
+import { gateways } from '../../application/gateways';
+import { failureMessage } from '../../application/result';
+import type {
+  DiagnosticState,
+  LearningRecommendations,
+  PublicQuestion,
+} from '../../domain/learning';
 
 type Props = {
   diagnostic: DiagnosticState;
@@ -17,7 +22,7 @@ export function DiagnosticAssessment({ diagnostic, onComplete }: Props) {
     Math.min(answeredInitially.length, Math.max(0, questions.length - 1)),
   );
   const [busy, setBusy] = useState(false);
-  const [message, setMessage] = useState("");
+  const [message, setMessage] = useState('');
   const current = questions[currentIndex];
   const finished = questions.length > 0 && answered.length >= questions.length;
   const progress = useMemo(
@@ -29,13 +34,10 @@ export function DiagnosticAssessment({ diagnostic, onComplete }: Props) {
     const answer = selected[question.id];
     if (answer === undefined) return;
     setBusy(true);
-    setMessage("");
-    const response = await apiFetch(`/student/diagnostic/${question.id}/answer`, {
-      method: "POST",
-      body: JSON.stringify({ selected_index: answer, response_time_seconds: 0 }),
-    });
-    if (!response.ok) {
-      setMessage(await apiError(response, "Não foi possível salvar esta resposta."));
+    setMessage('');
+    const saved = await gateways().student.answerDiagnostic(question.id, answer);
+    if (!saved.ok) {
+      setMessage(failureMessage(saved, 'Não foi possível salvar esta resposta.'));
       setBusy(false);
       return;
     }
@@ -46,14 +48,14 @@ export function DiagnosticAssessment({ diagnostic, onComplete }: Props) {
 
   async function complete() {
     setBusy(true);
-    setMessage("");
-    const response = await apiFetch("/student/diagnostic/complete", { method: "POST" });
-    if (!response.ok) {
-      setMessage(await apiError(response, "Não foi possível concluir a avaliação."));
+    setMessage('');
+    const completed = await gateways().student.completeDiagnostic<DiagnosticState>();
+    if (!completed.ok) {
+      setMessage(failureMessage(completed, 'Não foi possível concluir a avaliação.'));
       setBusy(false);
       return;
     }
-    const result = (await response.json()) as DiagnosticState;
+    const result = completed.data;
     onComplete({ mastery: result.mastery ?? [], recommendations: result.recommendations ?? [] });
   }
 
@@ -67,33 +69,56 @@ export function DiagnosticAssessment({ diagnostic, onComplete }: Props) {
         <p className="eyebrow">PONTO DE PARTIDA</p>
         <h1 id="diagnostic-title">Vamos descobrir o que você já domina.</h1>
         <p>Responda com calma. O resultado serve para organizar seu estudo, não para dar nota.</p>
-        <progress value={answered.length} max={questions.length} aria-label={`${progress}% concluído`} />
-        <small>{answered.length} de {questions.length} questões respondidas</small>
+        <progress
+          value={answered.length}
+          max={questions.length}
+          aria-label={`${progress}% concluído`}
+        />
+        <small>
+          {answered.length} de {questions.length} questões respondidas
+        </small>
       </header>
       <article className="diagnostic-question">
-        <span>{current.subject} - {current.topic}</span>
+        <span>
+          {current.subject} - {current.topic}
+        </span>
         <h2>{current.question}</h2>
         <div className="options">
           {current.options.map((option, index) => (
             <button
               type="button"
-              className={selected[current.id] === index ? "option chosen" : "option"}
+              className={selected[current.id] === index ? 'option chosen' : 'option'}
               onClick={() => setSelected((values) => ({ ...values, [current.id]: index }))}
               disabled={answered.includes(current.id)}
               key={`${current.id}-${index}`}
             >
-              <b>{String.fromCharCode(65 + index)}</b>{option}
+              <b>{String.fromCharCode(65 + index)}</b>
+              {option}
             </button>
           ))}
         </div>
-        {message && <p className="form-message" role="alert">{message}</p>}
+        {message && (
+          <p className="form-message" role="alert">
+            {message}
+          </p>
+        )}
         {finished ? (
-          <button className="primary-button" type="button" onClick={() => void complete()} disabled={busy}>
-            {busy ? "Montando seu mapa..." : "Ver meu mapa de aprendizagem"}
+          <button
+            className="primary-button"
+            type="button"
+            onClick={() => void complete()}
+            disabled={busy}
+          >
+            {busy ? 'Montando seu mapa...' : 'Ver meu mapa de aprendizagem'}
           </button>
         ) : (
-          <button className="primary-button" type="button" onClick={() => void saveAnswer(current)} disabled={busy || selected[current.id] === undefined}>
-            {busy ? "Salvando..." : "Confirmar e continuar"}
+          <button
+            className="primary-button"
+            type="button"
+            onClick={() => void saveAnswer(current)}
+            disabled={busy || selected[current.id] === undefined}
+          >
+            {busy ? 'Salvando...' : 'Confirmar e continuar'}
           </button>
         )}
       </article>

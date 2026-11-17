@@ -2,7 +2,7 @@
 
 import unittest
 
-from backend.difficulty_alerts import (
+from aprendeia.domain.difficulty_alerts import (
     build_immediate_email,
     build_weekly_email,
     is_high_difficulty,

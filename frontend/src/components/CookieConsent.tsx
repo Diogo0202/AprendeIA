@@ -6,7 +6,7 @@ import {
   trackingConfiguration,
   watchCookieConsent,
   type CookieChoice,
-} from '../lib/tracking';
+} from '../adapters/browser/tracking';
 import './cookies.css';
 
 /** Preferências opcionais são separadas do aceite necessário para a conta. */

@@ -47,8 +47,8 @@ Depois de pelo menos três tentativas, um aproveitamento abaixo de 60% abre um a
 ## Arquivos principais
 
 - `frontend/src/App.tsx` — `TeacherProfile` e o dashboard.
-- `backend/main.py` — endpoints `/teacher/*`.
-- `backend/teacher_dashboard.py` — gráficos, importação e CSV.
-- `backend/difficulty_alerts.py` — regra e textos dos alertas.
+- `backend/aprendeia/adapters/inbound/http/routers/teaching.py` — endpoints `/teacher/*`; regras em `backend/aprendeia/application/services/teaching.py`.
+- `backend/aprendeia/domain/teacher_dashboard.py` — gráficos, importação e CSV.
+- `backend/aprendeia/domain/difficulty_alerts.py` — regra e textos dos alertas.
 - `supabase/migrations/20260909120000_teacher_dashboard.sql` — turmas, conteúdos e recomendações.
 - `supabase/migrations/20260908150000_teacher_subject_alerts.sql` — disciplina única e alertas.

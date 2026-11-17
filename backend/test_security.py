@@ -4,14 +4,23 @@ import unittest
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
-from fastapi import HTTPException
+from aprendeia.domain.errors import ApplicationError
 from fastapi.testclient import TestClient
 from pydantic import ValidationError
 from supabase.lib.client_options import SyncClientOptions
 
 sys.path.insert(0, os.path.dirname(__file__))
 
-from main import StudentProfilePersonalization, TeacherApproval, QuestionRequest, UserCreate, app, current_user, database, enforce_api_rate_limit, hide_question_solution, require_role, sanitize_prompt_value
+from aprendeia.adapters.inbound.http.dependencies import authenticated_profile, require_role
+from aprendeia.adapters.inbound.http.schemas import QuestionRequest, StudentProfilePersonalization, TeacherApproval, UserCreate
+from aprendeia.adapters.inbound.http.support import http_headers
+from aprendeia.adapters.outbound.supabase.client import database
+from aprendeia.adapters.outbound.supabase.security import enforce_api_rate_limit
+from aprendeia.bootstrap import registered_routes
+from aprendeia.domain.questions import hide_question_solution
+from aprendeia.domain.text import sanitize_prompt_value
+from main import app
+from test_support import status_of
 
 
 class SecurityBoundaryTests(unittest.TestCase):
@@ -23,7 +32,7 @@ class SecurityBoundaryTests(unittest.TestCase):
             "SUPABASE_SECRET_KEY": "sb_secret_test_only",
         }
         with patch.dict(os.environ, environment, clear=True):
-            with patch("main.create_client") as create_client:
+            with patch("aprendeia.adapters.outbound.supabase.client.create_client") as create_client:
                 database()
 
         options = create_client.call_args.kwargs["options"]
@@ -34,10 +43,10 @@ class SecurityBoundaryTests(unittest.TestCase):
     def test_current_user_rejects_requests_without_supabase_configuration(self):
         """Sem banco configurado, nenhuma rota deve ganhar um usuário demo confiável."""
         with patch.dict(os.environ, {}, clear=True):
-            with self.assertRaises(HTTPException) as error:
-                current_user(None)
+            with self.assertRaises(ApplicationError) as error:
+                authenticated_profile(None)
 
-        self.assertEqual(error.exception.status_code, 503)
+        self.assertEqual(status_of(error.exception), 503)
 
     def test_prompt_value_rejects_control_characters(self):
         """Texto para a IA não pode carregar quebras de linha ou caracteres de controle."""
@@ -53,14 +62,14 @@ class SecurityBoundaryTests(unittest.TestCase):
 
     def test_student_cannot_use_admin_dependency(self):
         """Cargo vindo do token nunca pode atravessar a barreira de administradora."""
-        with self.assertRaises(HTTPException) as error:
+        with self.assertRaises(ApplicationError) as error:
             require_role("admin")({"role": "student"})
 
-        self.assertEqual(error.exception.status_code, 403)
+        self.assertEqual(status_of(error.exception), 403)
 
     def test_public_api_documentation_is_disabled(self):
         """A documentação não deve virar uma porta pública do backend."""
-        public_paths = {route.path for route in app.routes}
+        public_paths = {route.path for route in registered_routes()}
 
         self.assertNotIn("/docs", public_paths)
         self.assertNotIn("/openapi.json", public_paths)
@@ -85,11 +94,11 @@ class SecurityBoundaryTests(unittest.TestCase):
             {"allowed": False, "request_count": 10, "retry_after_seconds": 75}
         ]
 
-        with self.assertRaises(HTTPException) as error:
+        with self.assertRaises(ApplicationError) as error:
             enforce_api_rate_limit(db, "00000000-0000-0000-0000-000000000001", "generate_question")
 
-        self.assertEqual(error.exception.status_code, 429)
-        self.assertEqual(error.exception.headers["Retry-After"], "75")
+        self.assertEqual(status_of(error.exception), 429)
+        self.assertEqual(http_headers(error.exception)["Retry-After"], "75")
 
     def test_security_migration_closes_direct_answer_and_score_access(self):
         """A chave pública não pode ler gabarito nem forjar tentativas e progresso."""
@@ -140,14 +149,14 @@ class SecurityBoundaryTests(unittest.TestCase):
 
     def test_teacher_request_approval_routes_are_admin_only(self):
         """Solicitar o cadastro não pode transformar a própria conta em professor."""
-        paths = {route.path for route in app.routes}
+        paths = {route.path for route in registered_routes()}
 
         self.assertIn("/admin/teacher-requests", paths)
         self.assertIn("/admin/teacher-requests/{user_id}/approve", paths)
-        with self.assertRaises(HTTPException) as error:
+        with self.assertRaises(ApplicationError) as error:
             require_role("admin")({"role": "student"})
 
-        self.assertEqual(error.exception.status_code, 403)
+        self.assertEqual(status_of(error.exception), 403)
 
     def test_teacher_approval_normalizes_subject(self):
         """A disciplina aprovada segue o mesmo formato usado no cadastro direto."""
@@ -171,13 +180,13 @@ class SecurityBoundaryTests(unittest.TestCase):
 
     def test_gamification_endpoint_exists_as_a_student_only_route(self):
         """O perfil não pode buscar pontos de outro estudante trocando um ID."""
-        paths = {route.path for route in app.routes}
+        paths = {route.path for route in registered_routes()}
 
         self.assertIn("/student/gamification", paths)
-        with self.assertRaises(HTTPException) as error:
+        with self.assertRaises(ApplicationError) as error:
             require_role("student")({"role": "teacher"})
 
-        self.assertEqual(error.exception.status_code, 403)
+        self.assertEqual(status_of(error.exception), 403)
 
     def test_profile_personalization_rejects_arbitrary_visual_values(self):
         """O navegador não pode gravar CSS ou nomes de avatar inventados."""
@@ -192,17 +201,17 @@ class SecurityBoundaryTests(unittest.TestCase):
     def test_profile_personalization_endpoint_is_student_only(self):
         """Professor e administração não usam a rota destinada ao estudante."""
 
-        paths = {route.path for route in app.routes}
+        paths = {route.path for route in registered_routes()}
         self.assertIn("/student/profile-personalization", paths)
-        with self.assertRaises(HTTPException) as error:
+        with self.assertRaises(ApplicationError) as error:
             require_role("student")({"role": "teacher"})
 
-        self.assertEqual(error.exception.status_code, 403)
+        self.assertEqual(status_of(error.exception), 403)
 
     def test_new_learning_and_admin_routes_keep_role_boundaries(self):
         """A URL existir não basta: cada grupo continua preso ao cargo certo."""
 
-        paths = {route.path for route in app.routes}
+        paths = {route.path for route in registered_routes()}
         expected = {
             "/student/diagnostic",
             "/student/recommendations",
@@ -214,9 +223,9 @@ class SecurityBoundaryTests(unittest.TestCase):
             "/admin/contents",
         }
         self.assertTrue(expected.issubset(paths))
-        with self.assertRaises(HTTPException):
+        with self.assertRaises(ApplicationError):
             require_role("admin")({"role": "student"})
-        with self.assertRaises(HTTPException):
+        with self.assertRaises(ApplicationError):
             require_role("teacher")({"role": "student"})
 
     def test_learning_migration_keeps_diagnostics_behind_backend(self):

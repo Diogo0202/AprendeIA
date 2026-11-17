@@ -2,7 +2,7 @@
 
 ## Estado observado neste checkout
 
-`backend/main.py` chama `verify_turnstile` no endpoint `POST /auth/login`, com a ação fixa `login`. Em modo `backend`, o servidor valida o token no Cloudflare e não o encaminha ao Auth. Em modo `supabase`, `authenticate_with_password` cria um cliente público e encaminha `captcha_token` a `sign_in_with_password`; o token não passa por Siteverify no backend.
+`backend/aprendeia/application/services/access.py` (`LoginService`) chama `verify_turnstile` no endpoint `POST /auth/login`, com a ação fixa `login`. Em modo `backend`, o servidor valida o token no Cloudflare e não o encaminha ao Auth. Em modo `supabase`, `authenticate_with_password` cria um cliente público e encaminha `captcha_token` a `sign_in_with_password`; o token não passa por Siteverify no backend.
 
 O frontend chama Supabase Auth diretamente para cadastro (`signUp`) e recuperação (`resetPasswordForEmail`), enviando `captchaToken`. O CAPTCHA precisa estar ativo na configuração do Supabase Auth para impedir chamadas diretas sem token. Com esse fluxo atual, escolha `TURNSTILE_VERIFICATION_MODE=supabase` em produção. O modo `backend` cobre apenas o login atual; cadastro e recuperação não passam por rotas que validem CAPTCHA no backend.
 

@@ -1,9 +1,12 @@
 import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { apiFetch } from '../../lib/api';
+import { apiFetch } from '../../adapters/http/apiClient';
 import { Leaderboard, type LeaderboardData } from './Leaderboard';
 
-vi.mock('../../lib/api', () => ({ apiFetch: vi.fn() }));
+vi.mock('../../adapters/http/apiClient', () => ({
+  apiFetch: vi.fn(),
+  apiError: vi.fn(async () => ''),
+}));
 const classId = '10000000-0000-0000-0000-000000000001';
 const entry = {
   alias: 'Cometa',

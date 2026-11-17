@@ -1,6 +1,6 @@
 import { useEffect } from 'react';
 import { LegalDocuments } from './LegalDocuments';
-import { cleanNavigation, stopOptionalTracking } from '../lib/tracking';
+import { cleanNavigation, stopOptionalTracking } from '../adapters/browser/tracking';
 
 /** Página informativa separada do documento que contém login e dados escolares. */
 export function AboutPage() {

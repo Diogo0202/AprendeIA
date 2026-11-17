@@ -7,9 +7,9 @@ import { CommunicationCenter } from '../CommunicationCenter';
 import { AdminPrivacyRequests } from '../PrivacyRequests';
 import { NavigationDock } from '../NavigationDock';
 import { LegalDocuments } from '../LegalDocuments';
-import { apiError, apiFetch } from '../../lib/api';
-import { supabase } from '../../lib/supabase';
-import type { Role } from '../../types/app';
+import { gateways, isConnected } from '../../application/gateways';
+import { failureMessage } from '../../application/result';
+import type { Role } from '../../domain/app';
 import { Header, Avatar } from '../layout/Chrome';
 
 type TeacherRegistrationRequest = {
@@ -67,7 +67,7 @@ const demoAdminUsers: AdminUser[] = [
 
 export function AdminProfile({ onLogout }: { onLogout: () => void }) {
   const [activeTab, setActiveTab] = useState<AdminTab>('overview');
-  const [people, setPeople] = useState<AdminUser[]>(supabase ? [] : demoAdminUsers);
+  const [people, setPeople] = useState<AdminUser[]>(isConnected() ? [] : demoAdminUsers);
   const [overview, setOverview] = useState<AdminOverview | null>(null);
   const [activityUser, setActivityUser] = useState<{ id: string; name: string } | null>(null);
   const [adminSubjects, setAdminSubjects] = useState<AdminSubject[]>([]);
@@ -77,29 +77,30 @@ export function AdminProfile({ onLogout }: { onLogout: () => void }) {
   const [busy, setBusy] = useState(false);
 
   async function loadUsers() {
-    if (!supabase) return;
-    const response = await apiFetch('/admin/users');
-    if (response.ok) setPeople((await response.json()) as AdminUser[]);
-    else setMessage(await apiError(response, 'Não foi possível carregar os usuários.'));
+    if (!isConnected()) return;
+    const users = await gateways().admin.users<AdminUser[]>();
+    if (users.ok) setPeople(users.data);
+    else setMessage(failureMessage(users, 'Não foi possível carregar os usuários.'));
   }
 
   useEffect(() => {
     let active = true;
     async function loadAdminData() {
-      if (!supabase) return;
-      const [requestsResponse, usersResponse, overviewResponse] = await Promise.all([
-        apiFetch('/admin/teacher-requests'),
-        apiFetch('/admin/users'),
-        apiFetch('/admin/overview'),
+      if (!isConnected()) return;
+      const { admin } = gateways();
+      const [requests, users, overview] = await Promise.all([
+        admin.teacherRequests<TeacherRegistrationRequest[]>(),
+        admin.users<AdminUser[]>(),
+        admin.overview<AdminOverview>(),
       ]);
       if (!active) return;
-      if (!requestsResponse.ok || !usersResponse.ok) {
+      if (!requests.ok || !users.ok) {
         setMessage('Não foi possível carregar os dados administrativos.');
         return;
       }
-      setTeacherRequests((await requestsResponse.json()) as TeacherRegistrationRequest[]);
-      setPeople((await usersResponse.json()) as AdminUser[]);
-      if (overviewResponse.ok) setOverview((await overviewResponse.json()) as AdminOverview);
+      setTeacherRequests(requests.data);
+      setPeople(users.data);
+      if (overview.ok) setOverview(overview.data);
     }
     void loadAdminData();
     return () => {
@@ -118,24 +119,20 @@ export function AdminProfile({ onLogout }: { onLogout: () => void }) {
     const label = role === 'teacher' ? 'Professor' : 'Estudante';
     setBusy(true);
     try {
-      if (supabase) {
-        const response = await apiFetch('/admin/users', {
-          method: 'POST',
-          body: JSON.stringify({
-            name,
-            email: String(data.get('email')),
-            password: String(data.get('password')),
-            role,
-            subject: role === 'teacher' ? String(data.get('subject')) : undefined,
-          }),
+      if (isConnected()) {
+        const created = await gateways().admin.createUser({
+          name,
+          email: String(data.get('email')),
+          password: String(data.get('password')),
+          role,
+          subject: role === 'teacher' ? String(data.get('subject')) : undefined,
         });
-        if (!response.ok) {
-          const detail = await response.json().catch(() => ({}));
-          setMessage(detail.detail || 'Não foi possível incluir o usuário.');
+        if (!created.ok) {
+          setMessage(failureMessage(created, 'Não foi possível incluir o usuário.'));
           return;
         }
       }
-      if (supabase) await loadUsers();
+      if (isConnected()) await loadUsers();
       else
         setPeople((current) => [
           ...current,
@@ -158,13 +155,9 @@ export function AdminProfile({ onLogout }: { onLogout: () => void }) {
     setBusy(true);
     setMessage('');
     try {
-      const response = await apiFetch(`/admin/teacher-requests/${request.id}/approve`, {
-        method: 'POST',
-        body: JSON.stringify({ subject }),
-      });
-      if (!response.ok) {
-        const detail = await response.json().catch(() => ({}));
-        setMessage(detail.detail || 'Não foi possível aprovar o cadastro.');
+      const approved = await gateways().admin.approveTeacher(request.id, subject);
+      if (!approved.ok) {
+        setMessage(failureMessage(approved, 'Não foi possível aprovar o cadastro.'));
         return;
       }
       setTeacherRequests((current) => current.filter((item) => item.id !== request.id));

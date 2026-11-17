@@ -1,5 +1,5 @@
 import { useEffect, useState, type FormEvent, type ReactNode } from 'react';
-import { apiFetch } from '../lib/api';
+import { gateways } from '../application/gateways';
 import {
   InstitutionalAdmission,
   isAccountLifecycleStatus,
@@ -33,9 +33,9 @@ export function AccountLifecyclePanel({ userId, role, children }: AccountLifecyc
     async function load() {
       try {
         if (!userId) throw new Error();
-        const response = await apiFetch('/account/status', { signal: controller.signal });
-        if (!response.ok) throw new Error();
-        const data: unknown = await response.json();
+        const result = await gateways().account.status<unknown>(controller.signal);
+        if (!result.ok) throw new Error();
+        const data = result.data;
         if (!isAccountLifecycleStatus(data)) throw new Error();
         if (!controller.signal.aborted) setResult({ userId, revision, status: data });
       } catch {
@@ -94,11 +94,11 @@ export function AccountLifecyclePanel({ userId, role, children }: AccountLifecyc
     // Bloqueia enquanto a alteração é processada; não infere aprovação pela resposta de escrita.
     setResult(null);
     try {
-      const response = await apiFetch(kind === 'age' ? '/account/age-band' : '/account/admission', {
-        method: kind === 'age' ? 'PUT' : 'POST',
-        body: JSON.stringify(payload),
-      });
-      if (!response.ok) throw new Error();
+      const { account } = gateways();
+      const sent = await (kind === 'age'
+        ? account.declareAge(payload)
+        : account.requestAdmission(payload));
+      if (!sent.ok) throw new Error();
       setMessage(
         kind === 'age'
           ? 'Faixa etária enviada. Consultando a decisão do servidor.'
