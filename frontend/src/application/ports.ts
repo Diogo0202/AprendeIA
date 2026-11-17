@@ -8,7 +8,6 @@ import type { Result } from './result';
 
 export type Answer = { selected_index: number; response_time_seconds?: number };
 export type PrivacyRequestScope = 'own' | 'all';
-export type AdminListing = 'teachers' | 'classes';
 
 export type LoginCredentials = { email: string; password: string; captcha_token?: string };
 

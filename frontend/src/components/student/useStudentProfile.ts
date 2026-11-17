@@ -10,15 +10,7 @@ import type { UserProfile, GamificationSummary } from '../../domain/app';
 import { demoSubjects, demoGamification } from './demoData';
 
 /** Estado e ações de StudentProfile; a tela só exibe o que este hook devolve. */
-export function useStudentProfile({
-  profile,
-}: {
-  profile: UserProfile;
-  onProfileChange: (profile: UserProfile) => void;
-  onLogout: () => void;
-  onChangePassword: () => void;
-  onPractice: (subject?: string) => void;
-}) {
+export function useStudentProfile({ profile }: { profile: UserProfile }) {
   const [gamification, setGamification] = useState<GamificationSummary | null>(
     isConnected() ? null : demoGamification,
   );

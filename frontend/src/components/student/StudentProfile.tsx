@@ -45,7 +45,7 @@ export function StudentProfile(props: {
     levelStyle,
     subjectCategories,
     visibleSubjects,
-  } = useStudentProfile(props);
+  } = useStudentProfile({ profile: props.profile });
 
   if (isEditingProfile) {
     return (
