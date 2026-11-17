@@ -21,7 +21,7 @@ from aprendeia.adapters.inbound.http.schemas import (
     TeacherQuestionReview,
 )
 from aprendeia.application.services.account_rights import LeaderboardData, LeaderboardPreferences
-from aprendeia.domain.errors import Unprocessable
+from aprendeia.domain.errors import InvalidInput, Unprocessable
 from aprendeia.domain.questions import validate_question_id
 from aprendeia.domain.text import sanitize_prompt_value
 
@@ -30,6 +30,15 @@ router = APIRouter()
 SUBJECT_MAX_LENGTH = 60
 MAX_PAGE = 1_000_000
 MAX_PAGE_SIZE = 50
+
+
+def subject_filter(value: str) -> str:
+    """Recusa com 400 um filtro de disciplina vazio, longo ou com marcação."""
+
+    try:
+        return sanitize_prompt_value(value, max_length=SUBJECT_MAX_LENGTH)
+    except ValueError as error:
+        raise InvalidInput(str(error)) from error
 
 
 @router.get("/question-bank")
@@ -42,7 +51,7 @@ def list_questions(
     """Lista questões e permite filtros simples para uso pedagógico."""
 
     if subject is not None:
-        subject = sanitize_prompt_value(subject, max_length=SUBJECT_MAX_LENGTH)
+        subject = subject_filter(subject)
     return services.question_bank.list_questions(user, subject, difficulty)
 
 
@@ -74,7 +83,7 @@ def review_teacher_question(
 def next_question(user: StudentUser, services: RequestServices, subject: str = "Matemática"):
     """Seleciona uma questão no nível calculado para o estudante autenticado."""
 
-    subject = sanitize_prompt_value(subject, max_length=SUBJECT_MAX_LENGTH)
+    subject = subject_filter(subject)
     return services.question_bank.next_question(user, subject)
 
 

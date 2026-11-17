@@ -67,6 +67,16 @@ class SecurityBoundaryTests(unittest.TestCase):
 
         self.assertEqual(status_of(error.exception), 403)
 
+    def test_invalid_subject_filter_is_a_client_error(self):
+        """Um ?subject= inválido vira 400, não 500."""
+        from aprendeia.adapters.inbound.http.routers.learning import subject_filter
+        from aprendeia.domain.errors import InvalidInput
+
+        for value in ("", "<b>", "x" * 61):
+            with self.assertRaises(InvalidInput):
+                subject_filter(value)
+        self.assertEqual(subject_filter(" Matemática "), "Matemática")
+
     def test_public_api_documentation_is_disabled(self):
         """A documentação não deve virar uma porta pública do backend."""
         public_paths = {route.path for route in registered_routes()}
