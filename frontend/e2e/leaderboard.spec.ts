@@ -24,7 +24,7 @@ const ranking = {
 
 // An intercepted document mounts real Vite modules; no fixture enters the production bundle.
 async function mount(page: Page, teacher = false) {
-  await page.route('**/src/lib/supabase.ts*', (route) =>
+  await page.route('**/src/adapters/supabase/client.ts*', (route) =>
     route.fulfill({
       contentType: 'text/javascript',
       body: 'export const apiUrl = "/api"; export async function accessToken() { return null; }',

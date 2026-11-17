@@ -1,5 +1,5 @@
 import { useEffect, useId, useRef, useState, type FormEvent, type KeyboardEvent } from 'react';
-import { apiFetch } from '../../lib/api';
+import { gateways } from '../../application/gateways';
 import './gamification.css';
 
 export type LeaderboardEntry = {
@@ -108,12 +108,15 @@ export function Leaderboard({
               : { scope, page: String(page), page_size: String(effectivePageSize) },
           );
           if (!teacher && scope === 'class' && classId) query.set('class_id', classId);
-          const path = teacher
-            ? `/teacher/classes/${encodeURIComponent(teacherClassId!)}/leaderboard`
-            : '/student/leaderboard';
-          const response = await apiFetch(`${path}?${query}`, { signal: controller.signal });
-          if (!response.ok) throw new Error('request failed');
-          result = (await response.json()) as LeaderboardData;
+          const loaded = await (teacher
+            ? gateways().teacher.classLeaderboard<LeaderboardData>(
+                teacherClassId!,
+                String(query),
+                controller.signal,
+              )
+            : gateways().student.leaderboard<LeaderboardData>(String(query), controller.signal));
+          if (!loaded.ok) throw new Error('request failed');
+          result = loaded.data;
         }
         if (controller.signal.aborted) return;
         // The first class request discovers the authorized class list; never invent a class UUID.
@@ -183,12 +186,11 @@ export function Leaderboard({
     setSaveError('');
     setMessage('');
     try {
-      const response = await apiFetch('/student/leaderboard-preferences', {
-        method: 'PUT',
-        body: JSON.stringify(preferences),
-        signal: controller.signal,
-      });
-      if (!response.ok) throw new Error('save failed');
+      const saved = await gateways().student.saveLeaderboardPreferences(
+        preferences,
+        controller.signal,
+      );
+      if (!saved.ok) throw new Error('save failed');
       if (controller.signal.aborted) return;
       setMessage('Preferências salvas.');
       setPage(1);

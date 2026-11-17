@@ -3,7 +3,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { TurnstileWidget } from './TurnstileWidget';
 
 const config = vi.hoisted(() => ({ turnstileSiteKey: 'public-test-key' }));
-vi.mock('../lib/supabase', () => config);
+vi.mock('../adapters/supabase/client', () => config);
 
 let options: Record<string, unknown>;
 const reset = vi.fn();

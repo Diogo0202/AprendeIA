@@ -1,6 +1,6 @@
 import { useEffect, useId, useRef, useState } from 'react';
 
-import { legalDocumentLabel, useCurrentLegalDocuments } from '../lib/legalVersions';
+import { legalDocumentLabel, useCurrentLegalDocuments } from '../adapters/http/legalVersions';
 
 /** O navegador também valida o campo; o backend repete a exigência no cadastro. */
 export function PrivacyConsentCheckbox({

@@ -4,15 +4,17 @@ import unittest
 
 sys.path.insert(0, os.path.dirname(__file__))
 
-from main import app, require_role
-from teacher_dashboard import build_difficulty_trend, build_report_csv, parse_content_import
+from aprendeia.adapters.inbound.http.dependencies import require_role
+from aprendeia.bootstrap import registered_routes
+from test_support import status_of
+from aprendeia.domain.teacher_dashboard import build_difficulty_trend, build_report_csv, parse_content_import
 
 
 class TeacherDashboardTests(unittest.TestCase):
     def test_teacher_dashboard_routes_exist(self):
         """A interface só deve apontar para funções que o backend realmente oferece."""
 
-        paths = {route.path for route in app.routes}
+        paths = {route.path for route in registered_routes()}
         expected = {
             "/teacher/overview",
             "/teacher/classes",
@@ -30,7 +32,7 @@ class TeacherDashboardTests(unittest.TestCase):
 
         with self.assertRaises(Exception) as error:
             require_role("teacher")({"role": "student"})
-        self.assertEqual(error.exception.status_code, 403)
+        self.assertEqual(status_of(error.exception), 403)
 
     def test_difficulty_trend_groups_attempts_by_week(self):
         attempts = [

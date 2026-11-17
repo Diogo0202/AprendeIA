@@ -3,10 +3,10 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { AdminPerformance, AdminTeachersClasses, AdminUsers, type AdminUser } from './AdminPanels';
 import { AuditLogPanel } from './AuditLogPanel';
 import { CommunicationCenter } from '../CommunicationCenter';
-import { apiFetch } from '../../lib/api';
+import { apiFetch } from '../../adapters/http/apiClient';
 
-vi.mock('../../lib/supabase', () => ({ isSupabaseConfigured: true }));
-vi.mock('../../lib/api', () => ({
+vi.mock('../../adapters/supabase/client', () => ({ isSupabaseConfigured: true }));
+vi.mock('../../adapters/http/apiClient', () => ({
   apiFetch: vi.fn(),
   apiError: vi.fn(
     async (response: Response, fallback: string) => (await response.json()).detail || fallback,

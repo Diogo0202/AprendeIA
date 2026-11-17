@@ -4,23 +4,17 @@ import type { AvatarKey } from './components/FallbackAvatar';
 import { PrivacyRequests } from './components/PrivacyRequests';
 import { TermsOfUseAccess } from './components/LegalDocuments';
 import { PrivacyConsentCheckbox, PrivacyPolicyAccess } from './components/PrivacyPolicyAccess';
-import { apiError, apiFetch } from './lib/api';
-import { clearAuthCallbackUrl } from './lib/recovery';
+import { gateways } from './application/gateways';
+import { failureMessage } from './application/result';
+import { clearAuthCallbackUrl } from './adapters/browser/recovery';
 import {
   currentLegalDocuments,
   loadLegalDocuments,
   useCurrentLegalDocuments,
-} from './lib/legalVersions';
-import { apiUrl, isSupabaseConfigured, supabase } from './lib/supabase';
-import type {
-  View,
-  Role,
-  SignupRole,
-  AccentTheme,
-  LoginSessionPayload,
-  UserProfile,
-} from './types/app';
-import { applyAccentTheme } from './lib/theme';
+} from './adapters/http/legalVersions';
+import { apiUrl, isSupabaseConfigured, supabase } from './adapters/supabase/client';
+import type { View, Role, SignupRole, AccentTheme, UserProfile } from './domain/app';
+import { applyAccentTheme } from './adapters/browser/theme';
 import { Brand, Header } from './components/layout/Chrome';
 import { Login, Signup, ForgotPassword, ResetPassword } from './components/auth/AuthScreens';
 import { StudentProfile } from './components/student/StudentProfile';
@@ -198,24 +192,18 @@ export default function App() {
       return;
     }
     try {
-      const loginResponse = await fetch(`${apiUrl}/auth/login`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          email: String(data.get('email')),
-          password: String(data.get('password')),
-          captcha_token: String(data.get('captcha_token') || '') || undefined,
-        }),
+      const login = await gateways().account.login({
+        email: String(data.get('email')),
+        password: String(data.get('password')),
+        captcha_token: String(data.get('captcha_token') || '') || undefined,
       });
-      const payload = (await loginResponse.json().catch(() => ({}))) as LoginSessionPayload;
-      if (!loginResponse.ok) {
-        if (loginResponse.status === 429) {
-          const seconds = Number(loginResponse.headers.get('Retry-After') || 300);
-          const minutes = Math.max(1, Math.ceil(seconds / 60));
+      if (!login.ok) {
+        if (login.status === 429) {
+          const minutes = Math.max(1, Math.ceil(login.retryAfterSeconds / 60));
           setAuthMessage(
             `Limite de tentativas atingido. Tente novamente em ${minutes} minuto${minutes === 1 ? '' : 's'}.`,
           );
-        } else if (loginResponse.status >= 500) {
+        } else if (login.status >= 500) {
           setAuthMessage('O login está temporariamente indisponível. Tente novamente mais tarde.');
         } else {
           setAuthMessage('E-mail ou senha inválidos.');
@@ -223,14 +211,14 @@ export default function App() {
         setAuthLoading(false);
         return;
       }
-      if (!payload.access_token || !payload.refresh_token) {
+      if (!login.accessToken || !login.refreshToken) {
         setAuthMessage('O login está temporariamente indisponível. Tente novamente mais tarde.');
         setAuthLoading(false);
         return;
       }
       const { error } = await supabase.auth.setSession({
-        access_token: payload.access_token,
-        refresh_token: payload.refresh_token,
+        access_token: login.accessToken,
+        refresh_token: login.refreshToken,
       });
       if (error) {
         setAuthMessage('Não foi possível abrir sua sessão. Tente novamente.');
@@ -356,16 +344,13 @@ export default function App() {
     }
     setAuthLoading(true);
     if (!(await confirmDisplayedVersions(form))) return;
-    const response = await apiFetch('/privacy/accept', {
-      method: 'POST',
-      body: JSON.stringify({
-        policy_version: PRIVACY_POLICY_VERSION,
-        terms_version: TERMS_OF_USE_VERSION,
-      }),
-    });
-    if (!response.ok) {
+    const accepted = await gateways().account.acceptLegalDocuments(
+      PRIVACY_POLICY_VERSION,
+      TERMS_OF_USE_VERSION,
+    );
+    if (!accepted.ok) {
       setAuthMessage(
-        await apiError(response, 'Não foi possível salvar seu aceite. Tente novamente.'),
+        failureMessage(accepted, 'Não foi possível salvar seu aceite. Tente novamente.'),
       );
       setAuthLoading(false);
       return;

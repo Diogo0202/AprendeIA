@@ -15,7 +15,7 @@ async function mount(page: Page, screen: string) {
   await page.route('**/*', async (route) => {
     const url = new URL(route.request().url());
     if (!['127.0.0.1', 'localhost'].includes(url.hostname)) return route.abort();
-    if (url.pathname === '/src/lib/supabase.ts')
+    if (url.pathname === '/src/adapters/supabase/client.ts')
       return route.fulfill({
         contentType: 'text/javascript',
         body: 'export const supabase=null;export const isSupabaseConfigured=false;export const apiUrl="/isolated-api";export const turnstileSiteKey="";export async function accessToken(){return null}',
@@ -268,7 +268,7 @@ for (const path of ['/', '/sobre'])
         external.push(url.origin);
         return route.abort();
       }
-      if (url.pathname === '/src/lib/supabase.ts')
+      if (url.pathname === '/src/adapters/supabase/client.ts')
         return route.fulfill({
           contentType: 'text/javascript',
           body: 'export const supabase=null;export const isSupabaseConfigured=false;export const apiUrl="/isolated-api";export const turnstileSiteKey="";export async function accessToken(){return null}',

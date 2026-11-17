@@ -1,6 +1,7 @@
 import { FormEvent, useCallback, useEffect, useId, useRef, useState } from 'react';
-import { apiError, apiFetch } from '../lib/api';
-import { isSupabaseConfigured } from '../lib/supabase';
+import { gateways } from '../application/gateways';
+import { failureMessage } from '../application/result';
+import { isSupabaseConfigured } from '../adapters/supabase/client';
 
 type Kind =
   | 'access'
@@ -150,16 +151,18 @@ function RequestPanel({ admin = false }: { admin?: boolean }) {
       setLoaded(false);
       try {
         // A lista pessoal identifica pedidos próprios sem depender de campos fora do contrato.
-        const responses = await Promise.all([
-          apiFetch(endpoint, { signal }),
-          ...(admin ? [apiFetch('/privacy/requests', { signal })] : []),
+        const { privacy } = gateways();
+        const results = await Promise.all([
+          privacy.requests<PrivacyRequest[]>(admin ? 'all' : 'own', signal),
+          ...(admin ? [privacy.requests<PrivacyRequest[]>('own', signal)] : []),
         ]);
-        for (const response of responses) {
-          if (!response.ok)
-            throw new Error(await apiError(response, 'Não foi possível carregar os pedidos.'));
-        }
-        const items = (await responses[0].json()) as PrivacyRequest[];
-        const own = admin ? ((await responses[1].json()) as PrivacyRequest[]) : [];
+        const loaded = results.map((result) => {
+          if (!result.ok)
+            throw new Error(failureMessage(result, 'Não foi possível carregar os pedidos.'));
+          return result.data;
+        });
+        const items = loaded[0];
+        const own = admin ? loaded[1] : [];
         if (signal?.aborted) return;
         setRequests(items);
         setOwnIds(own.map((item) => item.id));
@@ -186,12 +189,9 @@ function RequestPanel({ admin = false }: { admin?: boolean }) {
     setError('');
     setMessage('');
     try {
-      const response = await apiFetch(path, {
-        method: 'POST',
-        ...(body ? { body: JSON.stringify(body) } : {}),
-      });
-      if (!response.ok)
-        throw new Error(await apiError(response, 'Não foi possível concluir a operação.'));
+      const submitted = await gateways().privacy.submit(path, body);
+      if (!submitted.ok)
+        throw new Error(failureMessage(submitted, 'Não foi possível concluir a operação.'));
       setMessage('Operação registrada.');
       if (path === '/privacy/requests') {
         setDetails('');
@@ -212,11 +212,11 @@ function RequestPanel({ admin = false }: { admin?: boolean }) {
     setError('');
     setMessage('');
     try {
-      const response = await apiFetch(`/privacy/requests/${encodeURIComponent(request.id)}/export`);
-      if (!response.ok)
-        throw new Error(await apiError(response, 'Não foi possível baixar os dados.'));
+      const exported = await gateways().privacy.exportData(request.id);
+      if (!exported.ok)
+        throw new Error(failureMessage(exported, 'Não foi possível baixar os dados.'));
       // O arquivo recebe um nome fixo para não carregar dados pessoais no nome do download.
-      const url = URL.createObjectURL(await response.blob());
+      const url = URL.createObjectURL(exported.data);
       const anchor = document.createElement('a');
       anchor.href = url;
       anchor.download = 'meus-dados.json';

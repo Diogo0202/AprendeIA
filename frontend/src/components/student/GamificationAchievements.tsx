@@ -1,17 +1,10 @@
 import { useEffect, useId, useState } from 'react';
-import { apiFetch } from '../../lib/api';
+import { gateways } from '../../application/gateways';
 import './gamification.css';
 
-export type GamificationAchievement = {
-  id: string;
-  title: string;
-  description: string;
-  icon: string;
-  bonus_xp: number;
-  unlocked: boolean;
-  progress: number;
-  target: number;
-};
+import type { GamificationAchievement } from '../../domain/app';
+
+export type { GamificationAchievement };
 export type GamificationAchievementsData = {
   achievements: GamificationAchievement[];
   catalog?: GamificationAchievement[];
@@ -64,9 +57,11 @@ export function GamificationAchievements({
         let payload = supplied;
         if (!payload) {
           if (!connected) throw new Error('missing demo');
-          const response = await apiFetch('/student/gamification', { signal: controller.signal });
-          if (!response.ok) throw new Error('request failed');
-          payload = (await response.json()) as GamificationAchievementsData;
+          const loaded = await gateways().student.gamification<GamificationAchievementsData>(
+            controller.signal,
+          );
+          if (!loaded.ok) throw new Error('request failed');
+          payload = loaded.data;
         }
         if (!controller.signal.aborted) setResult(payload);
       } catch {

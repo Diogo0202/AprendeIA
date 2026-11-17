@@ -1,12 +1,15 @@
 import { cleanup, fireEvent, render, screen } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { apiFetch } from '../../lib/api';
+import { apiFetch } from '../../adapters/http/apiClient';
 import {
   GamificationAchievements,
   type GamificationAchievementsData,
 } from './GamificationAchievements';
 
-vi.mock('../../lib/api', () => ({ apiFetch: vi.fn() }));
+vi.mock('../../adapters/http/apiClient', () => ({
+  apiFetch: vi.fn(),
+  apiError: vi.fn(async () => ''),
+}));
 const achievement = {
   id: 'first',
   title: 'Primeiro passo',

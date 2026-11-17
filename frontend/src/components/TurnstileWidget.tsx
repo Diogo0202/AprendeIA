@@ -1,5 +1,5 @@
 import { useEffect, useId, useRef, useState } from 'react';
-import { turnstileSiteKey } from '../lib/supabase';
+import { turnstileSiteKey } from '../adapters/supabase/client';
 
 type TurnstileApi = {
   ready: (callback: () => void) => void;

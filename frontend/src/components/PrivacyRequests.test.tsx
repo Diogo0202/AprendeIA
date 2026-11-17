@@ -1,15 +1,15 @@
 import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { AdminPrivacyRequests, PrivacyRequests } from './PrivacyRequests';
-import { apiFetch } from '../lib/api';
+import { apiFetch } from '../adapters/http/apiClient';
 
 const configuration = vi.hoisted(() => ({ enabled: true }));
-vi.mock('../lib/supabase', () => ({
+vi.mock('../adapters/supabase/client', () => ({
   get isSupabaseConfigured() {
     return configuration.enabled;
   },
 }));
-vi.mock('../lib/api', () => ({
+vi.mock('../adapters/http/apiClient', () => ({
   apiFetch: vi.fn(),
   apiError: vi.fn(
     async (response: Response, fallback: string) => (await response.json()).detail || fallback,

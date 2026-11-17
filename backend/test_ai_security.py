@@ -4,7 +4,7 @@ import unittest
 
 sys.path.insert(0, os.path.dirname(__file__))
 
-from ai_security import PromptInjectionError, guard_ai_text, protected_ai_input, sanitize_ai_context
+from aprendeia.domain.ai_security import PromptInjectionError, guard_ai_text, protected_ai_input, sanitize_ai_context
 
 
 class AiSecurityTests(unittest.TestCase):

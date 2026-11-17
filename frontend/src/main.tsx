@@ -4,10 +4,14 @@ import './index.css';
 import App from './App';
 import { CookieConsent } from './components/CookieConsent';
 import { AboutPage } from './components/AboutPage';
-import { verifyPublicGuest } from './lib/tracking';
-import { apiUrl, supabase } from './lib/supabase';
-import { loadLegalDocuments } from './lib/legalVersions';
+import { verifyPublicGuest } from './adapters/browser/tracking';
+import { apiUrl, supabase } from './adapters/supabase/client';
+import { loadLegalDocuments } from './adapters/http/legalVersions';
+import { createHttpGateways } from './adapters/http/gateways';
+import { provideGateways } from './application/gateways';
 
+// Raiz de composição: as telas recebem as portas já ligadas ao adaptador HTTP.
+provideGateways(createHttpGateways());
 void loadLegalDocuments(apiUrl);
 
 const about = window.location.pathname === '/sobre';

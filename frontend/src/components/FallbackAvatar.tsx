@@ -1,6 +1,8 @@
-import type { CSSProperties } from "react";
+import type { CSSProperties } from 'react';
 
-export type AvatarKey = "orbit" | "spark" | "books" | "prism" | "trail";
+import type { AvatarKey } from '../domain/app';
+
+export type { AvatarKey };
 
 type FallbackAvatarProps = {
   name: string;
@@ -15,19 +17,20 @@ type FallbackAvatarProps = {
  */
 export default function FallbackAvatar({
   name,
-  avatarKey = "orbit",
+  avatarKey = 'orbit',
   size = 38,
-  className = "",
+  className = '',
 }: FallbackAvatarProps) {
-  const initials = name
-    .trim()
-    .split(/\s+/)
-    .filter(Boolean)
-    .map((word) => word[0])
-    .slice(0, 2)
-    .join("")
-    .toLocaleUpperCase("pt-BR") || "A";
-  const style = { "--avatar-size": `${size}px` } as CSSProperties;
+  const initials =
+    name
+      .trim()
+      .split(/\s+/)
+      .filter(Boolean)
+      .map((word) => word[0])
+      .slice(0, 2)
+      .join('')
+      .toLocaleUpperCase('pt-BR') || 'A';
+  const style = { '--avatar-size': `${size}px` } as CSSProperties;
 
   return (
     <span

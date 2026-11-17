@@ -8,13 +8,17 @@ from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import patch
 
-from fastapi import HTTPException, Request
+from fastapi import Request
+from aprendeia.domain.errors import ServiceUnavailable
+from test_support import status_of
 from fastapi.testclient import TestClient
 from supabase_auth.errors import AuthApiError
 
 sys.path.insert(0, os.path.dirname(__file__))
 
-from auth_security import client_network, normalize_login_email, rate_limit_hash
+from aprendeia.adapters.inbound.http.support import client_network
+from aprendeia.domain.login_protection import normalize_login_email
+from test_support import rate_limit_hash
 from main import app
 
 
@@ -127,8 +131,8 @@ class LoginRateLimitTests(unittest.TestCase):
             raise AuthApiError("Invalid login credentials", 400, None)
 
         with patch.dict(os.environ, self.environment, clear=True):
-            with patch("main.database", return_value=self.database):
-                with patch("main.authenticate_with_password", side_effect=invalid_credentials):
+            with patch("aprendeia.adapters.outbound.supabase.client.database", return_value=self.database):
+                with patch("aprendeia.adapters.outbound.supabase.security.authenticate_with_password", side_effect=invalid_credentials):
                     responses = [
                         self.client.post(
                             "/auth/login",
@@ -162,8 +166,8 @@ class LoginRateLimitTests(unittest.TestCase):
                 ).status_code
 
         with patch.dict(os.environ, self.environment, clear=True):
-            with patch("main.database", return_value=self.database):
-                with patch("main.authenticate_with_password", side_effect=invalid_credentials):
+            with patch("aprendeia.adapters.outbound.supabase.client.database", return_value=self.database):
+                with patch("aprendeia.adapters.outbound.supabase.security.authenticate_with_password", side_effect=invalid_credentials):
                     with ThreadPoolExecutor(max_workers=10) as pool:
                         statuses = list(pool.map(attempt, range(10)))
 
@@ -228,16 +232,16 @@ class LoginRateLimitTests(unittest.TestCase):
 
         request = Request({"type": "http", "client": ("100.64.0.8", 1234), "headers": []})
 
-        with self.assertRaises(HTTPException) as error:
+        with self.assertRaises(ServiceUnavailable) as error:
             client_network(request, "rede-invalida")
 
-        self.assertEqual(error.exception.status_code, 503)
+        self.assertEqual(status_of(error.exception), 503)
 
     def test_missing_server_secret_fails_closed(self):
         """Sem um segredo forte, o sistema não pode liberar login sem proteção."""
 
         with patch.dict(os.environ, {}, clear=True):
-            with patch("main.database", return_value=self.database):
+            with patch("aprendeia.adapters.outbound.supabase.client.database", return_value=self.database):
                 response = self.client.post(
                     "/auth/login",
                     json={"email": "aluno@escola.com", "password": "senha"},
@@ -262,8 +266,8 @@ class LoginRateLimitTests(unittest.TestCase):
         self.database.limits[("identity", identity_hash)] = 5
 
         with patch.dict(os.environ, self.environment, clear=True):
-            with patch("main.database", return_value=self.database):
-                with patch("main.authenticate_with_password", return_value=auth_response):
+            with patch("aprendeia.adapters.outbound.supabase.client.database", return_value=self.database):
+                with patch("aprendeia.adapters.outbound.supabase.security.authenticate_with_password", return_value=auth_response):
                     response = self.client.post(
                         "/auth/login",
                         json={"email": "aluno@escola.com", "password": "correta"},

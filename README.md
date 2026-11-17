@@ -38,7 +38,8 @@ AprendeIA/
 ├── backend/                 # API, autenticação e regras do sistema
 │   ├── Dockerfile
 │   ├── .env.example
-│   ├── main.py
+│   ├── main.py              # ponto de entrada (main:app)
+│   ├── aprendeia/           # domain, application, adapters (hexagonal)
 │   └── requirements.txt
 ├── frontend/                # Telas e experiência de estudo
 │   ├── docker-entrypoint.d/

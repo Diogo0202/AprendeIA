@@ -1,5 +1,5 @@
 import { useEffect, useState, type FormEvent } from 'react';
-import { apiFetch } from '../lib/api';
+import { gateways } from '../application/gateways';
 
 type AdmissionRequest = {
   id: string;
@@ -38,9 +38,9 @@ export function AdminAdmissionPanel() {
     setRows([]);
     async function load() {
       try {
-        const response = await apiFetch('/admin/account-admissions', { signal: controller.signal });
-        if (!response.ok) throw new Error();
-        const data: unknown = await response.json();
+        const result = await gateways().admin.admissions<unknown>(controller.signal);
+        if (!result.ok) throw new Error();
+        const data = result.data;
         if (!Array.isArray(data) || !data.every(isRequest)) throw new Error();
         if (!controller.signal.aborted) setRows(data);
       } catch {
@@ -71,14 +71,8 @@ export function AdminAdmissionPanel() {
     setBusy(true);
     setMessage('');
     try {
-      const response = await apiFetch(
-        `/admin/account-admissions/${encodeURIComponent(row.id)}/review`,
-        {
-          method: 'POST',
-          body: JSON.stringify({ decision, version: '1', note }),
-        },
-      );
-      if (!response.ok) throw new Error();
+      const reviewed = await gateways().admin.reviewAdmission(row.id, decision, note);
+      if (!reviewed.ok) throw new Error();
       setMessage('Revisão registrada pelo servidor. Atualizando pedidos.');
       setRevision((value) => value + 1);
     } catch {

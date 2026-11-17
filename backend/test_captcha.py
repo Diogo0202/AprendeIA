@@ -8,7 +8,7 @@ from urllib.parse import parse_qs
 
 sys.path.insert(0, os.path.dirname(__file__))
 
-from captcha import CaptchaError, CaptchaUnavailable, captcha_configured, captcha_required, verify_turnstile
+from aprendeia.adapters.outbound.turnstile import CaptchaError, CaptchaUnavailable, captcha_configured, captcha_required, verify_turnstile
 
 CONFIG = {
     "TURNSTILE_SECRET_KEY": "test-secret",
@@ -54,7 +54,7 @@ class CaptchaTests(unittest.TestCase):
     def test_every_configuration_field_is_required_before_network(self):
         for missing in CONFIG:
             env = {**CONFIG, "APP_ENV": "production", missing: " "}
-            with self.subTest(missing=missing), patch.dict(os.environ, env, clear=True), patch("captcha.urlopen") as send:
+            with self.subTest(missing=missing), patch.dict(os.environ, env, clear=True), patch("aprendeia.adapters.outbound.turnstile.urlopen") as send:
                 self.assertFalse(captcha_configured())
                 with self.assertRaises(CaptchaUnavailable):
                     verify_turnstile("token")
@@ -82,7 +82,7 @@ class CaptchaTests(unittest.TestCase):
     def test_success_is_bound_to_server_action_and_exact_hostname(self):
         for action in ("login", "signup", "recovery"):
             with self.subTest(action=action), patch.dict(os.environ, CONFIG, clear=True), patch(
-                "captcha.urlopen", return_value=self.provider({"success": True, "hostname": "WWW.AprendeIA.example.", "action": action})
+                "aprendeia.adapters.outbound.turnstile.urlopen", return_value=self.provider({"success": True, "hostname": "WWW.AprendeIA.example.", "action": action})
             ) as send:
                 verify_turnstile(" token ", "203.0.113.2", expected_action=action)
                 self.assertEqual(send.call_count, 1)
@@ -97,33 +97,33 @@ class CaptchaTests(unittest.TestCase):
         for change in ({"hostname": "aprendeia.example.evil.test"}, {"hostname": "evil.test"},
                        {"hostname": None}, {"hostname": ""}, {"action": "signup"}, {"action": None}):
             result = {"success": True, "hostname": "aprendeia.example", "action": "login", **change}
-            with self.subTest(change=change), patch.dict(os.environ, CONFIG, clear=True), patch("captcha.urlopen", return_value=self.provider(result)):
+            with self.subTest(change=change), patch.dict(os.environ, CONFIG, clear=True), patch("aprendeia.adapters.outbound.turnstile.urlopen", return_value=self.provider(result)):
                 with self.assertRaises(CaptchaError):
                     verify_turnstile("token")
 
     def test_missing_and_oversized_tokens_never_reach_provider(self):
         for token in (None, "", "  ", "x" * 2049, 42):
-            with self.subTest(token_type=type(token).__name__), patch.dict(os.environ, CONFIG, clear=True), patch("captcha.urlopen") as send:
+            with self.subTest(token_type=type(token).__name__), patch.dict(os.environ, CONFIG, clear=True), patch("aprendeia.adapters.outbound.turnstile.urlopen") as send:
                 with self.assertRaises(CaptchaError):
                     verify_turnstile(token)
                 send.assert_not_called()
 
     def test_invalid_action_is_configuration_error(self):
-        with patch.dict(os.environ, CONFIG, clear=True), patch("captcha.urlopen") as send:
+        with patch.dict(os.environ, CONFIG, clear=True), patch("aprendeia.adapters.outbound.turnstile.urlopen") as send:
             with self.assertRaises(CaptchaUnavailable):
                 verify_turnstile("token", expected_action="arbitrary")
             send.assert_not_called()
 
     def test_provider_failure_is_unavailable_and_does_not_retry_consumed_token(self):
         for error in (URLError("offline"), TimeoutError(), OSError("socket closed")):
-            with self.subTest(error=type(error).__name__), patch.dict(os.environ, CONFIG, clear=True), patch("captcha.urlopen", side_effect=error) as send:
+            with self.subTest(error=type(error).__name__), patch.dict(os.environ, CONFIG, clear=True), patch("aprendeia.adapters.outbound.turnstile.urlopen", side_effect=error) as send:
                 with self.assertRaises(CaptchaUnavailable):
                     verify_turnstile("private-token")
                 self.assertEqual(send.call_count, 1)
 
     def test_invalid_provider_response_is_safe(self):
         for result in (None, [], "success", {}, {"success": "true"}, {"success": 1}):
-            with self.subTest(result=result), patch.dict(os.environ, CONFIG, clear=True), patch("captcha.urlopen", return_value=self.provider(result)):
+            with self.subTest(result=result), patch.dict(os.environ, CONFIG, clear=True), patch("aprendeia.adapters.outbound.turnstile.urlopen", return_value=self.provider(result)):
                 with self.assertRaises(CaptchaUnavailable):
                     verify_turnstile("private-token")
 
@@ -131,14 +131,14 @@ class CaptchaTests(unittest.TestCase):
         for body in (b"not json", b"\xff"):
             response = self.provider({})
             response.read.return_value = body
-            with self.subTest(body=body), patch.dict(os.environ, CONFIG, clear=True), patch("captcha.urlopen", return_value=response):
+            with self.subTest(body=body), patch.dict(os.environ, CONFIG, clear=True), patch("aprendeia.adapters.outbound.turnstile.urlopen", return_value=response):
                 with self.assertRaises(CaptchaUnavailable):
                     verify_turnstile("private-token")
 
     def test_provider_configuration_errors_are_unavailable(self):
         for code in ("invalid-input-secret", "missing-input-secret", "internal-error"):
             with self.subTest(code=code), patch.dict(os.environ, CONFIG, clear=True), patch(
-                "captcha.urlopen", return_value=self.provider({"success": False, "error-codes": [code]})
+                "aprendeia.adapters.outbound.turnstile.urlopen", return_value=self.provider({"success": False, "error-codes": [code]})
             ):
                 with self.assertRaises(CaptchaUnavailable) as caught:
                     verify_turnstile("private-token")
@@ -147,7 +147,7 @@ class CaptchaTests(unittest.TestCase):
 
     def test_expired_or_replayed_token_is_rejected_without_retry(self):
         with patch.dict(os.environ, CONFIG, clear=True), patch(
-            "captcha.urlopen", return_value=self.provider({"success": False, "error-codes": ["timeout-or-duplicate"]})
+            "aprendeia.adapters.outbound.turnstile.urlopen", return_value=self.provider({"success": False, "error-codes": ["timeout-or-duplicate"]})
         ) as send:
             with self.assertRaises(CaptchaError) as caught:
                 verify_turnstile("token")
@@ -174,12 +174,13 @@ class CaptchaRouteTests(unittest.TestCase):
                 self.assertEqual(client.get("/health/live").status_code, 200)
 
     def test_supabase_mode_never_consumes_token_locally_and_uses_public_client(self):
-        from main import LoginRequest, authenticate_with_password
+        from aprendeia.adapters.inbound.http.schemas import LoginRequest
+        from aprendeia.adapters.outbound.supabase.security import authenticate_with_password
 
         env = {**CONFIG, "TURNSTILE_VERIFICATION_MODE": "supabase", "APP_ENV": "production",
                "SUPABASE_URL": "https://auth.example.test", "SUPABASE_PUBLISHABLE_KEY": "public-test-key"}
-        with patch.dict(os.environ, env, clear=True), patch("captcha.urlopen") as siteverify, \
-                patch("main.create_client") as create, patch("main.database") as privileged:
+        with patch.dict(os.environ, env, clear=True), patch("aprendeia.adapters.outbound.turnstile.urlopen") as siteverify, \
+                patch("aprendeia.adapters.outbound.supabase.client.create_client") as create, patch("aprendeia.adapters.outbound.supabase.client.database") as privileged:
             verify_turnstile(" token ", expected_action="login")
             authenticate_with_password(LoginRequest(email="aluno@example.test", password="Senha123", captcha_token=" token "))
             siteverify.assert_not_called()
@@ -190,9 +191,10 @@ class CaptchaRouteTests(unittest.TestCase):
             })
 
     def test_backend_mode_does_not_forward_consumed_token(self):
-        from main import LoginRequest, authenticate_with_password
+        from aprendeia.adapters.inbound.http.schemas import LoginRequest
+        from aprendeia.adapters.outbound.supabase.security import authenticate_with_password
 
-        with patch.dict(os.environ, CONFIG, clear=True), patch("main.database") as db:
+        with patch.dict(os.environ, CONFIG, clear=True), patch("aprendeia.adapters.outbound.supabase.client.database") as db:
             authenticate_with_password(LoginRequest(email="aluno@example.test", password="Senha123", captcha_token="consumed-token"))
             db.return_value.auth.sign_in_with_password.assert_called_once_with({
                 "email": "aluno@example.test", "password": "Senha123",
@@ -201,7 +203,7 @@ class CaptchaRouteTests(unittest.TestCase):
     def test_supabase_mode_requires_public_key_and_token_without_siteverify(self):
         for overrides in ({"SUPABASE_PUBLISHABLE_KEY": ""}, {"SUPABASE_PUBLISHABLE_KEY": "public-test-key"}):
             env = {**CONFIG, "TURNSTILE_VERIFICATION_MODE": "supabase", **overrides}
-            with self.subTest(overrides=overrides), patch.dict(os.environ, env, clear=True), patch("captcha.urlopen") as send:
+            with self.subTest(overrides=overrides), patch.dict(os.environ, env, clear=True), patch("aprendeia.adapters.outbound.turnstile.urlopen") as send:
                 with self.assertRaises(CaptchaError):
                     verify_turnstile(None)
                 send.assert_not_called()
@@ -213,7 +215,7 @@ class CaptchaRouteTests(unittest.TestCase):
             self.assertFalse(captcha_configured())
             with self.assertRaises(CaptchaUnavailable):
                 verify_turnstile("token", expected_action="recovery")
-        with patch.dict(os.environ, env, clear=True), patch("captcha.urlopen") as siteverify:
+        with patch.dict(os.environ, env, clear=True), patch("aprendeia.adapters.outbound.turnstile.urlopen") as siteverify:
             verify_turnstile(" token ", expected_action="recovery")
             siteverify.assert_not_called()
 
@@ -223,7 +225,7 @@ class CaptchaRouteTests(unittest.TestCase):
 
         db = Mock()
         with patch.dict(os.environ, {"RAILWAY_ENVIRONMENT_NAME": "production", "RATE_LIMIT_PEPPER": "p" * 64}, clear=True), \
-                patch("main.database", return_value=db), patch("main.persist_access_audit"):
+                patch("aprendeia.adapters.outbound.supabase.client.database", return_value=db), patch("aprendeia.adapters.outbound.supabase.security.persist_access_audit"):
             response = TestClient(app).post("/auth/login", json={"email": "aluno@escola.com", "password": "Senha1"})
         self.assertEqual(response.status_code, 503)
         db.auth.sign_in_with_password.assert_not_called()
@@ -233,7 +235,7 @@ class CaptchaRouteTests(unittest.TestCase):
         from main import app
 
         with patch.dict(os.environ, {"RAILWAY_ENVIRONMENT_NAME": "production"}, clear=True), \
-                patch("main.supabase_configured", return_value=True), patch("main.database"):
+                patch("aprendeia.config.settings.supabase_configured", return_value=True), patch("aprendeia.adapters.outbound.supabase.client.database"):
             response = TestClient(app).get("/health/ready")
         self.assertEqual(response.status_code, 503)
         self.assertNotIn("TURNSTILE", response.text)

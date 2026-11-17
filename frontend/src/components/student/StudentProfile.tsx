@@ -6,15 +6,16 @@ import { DiagnosticAssessment } from './DiagnosticAssessment';
 import { LessonReader } from './LessonReader';
 import { Leaderboard } from './Leaderboard';
 import { GamificationAchievements } from './GamificationAchievements';
-import { apiError, apiFetch } from '../../lib/api';
-import { isSupabaseConfigured } from '../../lib/supabase';
+import { gateways } from '../../application/gateways';
+import { failureMessage } from '../../application/result';
+import { isSupabaseConfigured } from '../../adapters/supabase/client';
 import type {
   DiagnosticState,
   LearningRecommendations,
   StudentSubject,
-} from '../../types/learning';
-import type { UserProfile, GamificationSummary } from '../../types/app';
-import { applyAccentTheme } from '../../lib/theme';
+} from '../../domain/learning';
+import type { UserProfile, GamificationSummary } from '../../domain/app';
+import { applyAccentTheme } from '../../adapters/browser/theme';
 import { demoSubjects, demoGamification } from './demoData';
 import { Header, Avatar, Difficulty } from '../layout/Chrome';
 import { ProfileSetup } from './ProfileSetup';
@@ -69,10 +70,11 @@ export function StudentProfile({
   useEffect(() => {
     if (!isSupabaseConfigured) return;
     let active = true;
-    apiFetch('/student/gamification')
-      .then(async (response) => {
-        if (!response.ok) throw new Error('gamification request failed');
-        return (await response.json()) as GamificationSummary;
+    gateways()
+      .student.gamification<GamificationSummary>()
+      .then((result) => {
+        if (!result.ok) throw new Error('gamification request failed');
+        return result.data;
       })
       .then((summary) => {
         if (active) setGamification(summary);
@@ -94,29 +96,24 @@ export function StudentProfile({
     if (!isSupabaseConfigured) return;
     let active = true;
     setLearningLoading(true);
+    const { student } = gateways();
     Promise.all([
-      apiFetch('/student/subjects'),
-      apiFetch('/student/recommendations'),
-      apiFetch('/student/diagnostic'),
+      student.subjects<StudentSubject[]>(),
+      student.recommendations<LearningRecommendations>(),
+      student.diagnostic<DiagnosticState>(),
     ])
-      .then(async ([subjectsResponse, recommendationsResponse, diagnosticResponse]) => {
-        if (!subjectsResponse.ok)
+      .then(([subjects, recommendations, diagnostic]) => {
+        if (!subjects.ok)
+          throw new Error(failureMessage(subjects, 'Não foi possível carregar as matérias.'));
+        if (!recommendations.ok)
           throw new Error(
-            await apiError(subjectsResponse, 'Não foi possível carregar as matérias.'),
+            failureMessage(recommendations, 'Não foi possível carregar as recomendações.'),
           );
-        if (!recommendationsResponse.ok)
+        if (!diagnostic.ok)
           throw new Error(
-            await apiError(recommendationsResponse, 'Não foi possível carregar as recomendações.'),
+            failureMessage(diagnostic, 'Não foi possível abrir a avaliação diagnóstica.'),
           );
-        if (!diagnosticResponse.ok)
-          throw new Error(
-            await apiError(diagnosticResponse, 'Não foi possível abrir a avaliação diagnóstica.'),
-          );
-        return Promise.all([
-          subjectsResponse.json() as Promise<StudentSubject[]>,
-          recommendationsResponse.json() as Promise<LearningRecommendations>,
-          diagnosticResponse.json() as Promise<DiagnosticState>,
-        ]);
+        return [subjects.data, recommendations.data, diagnostic.data] as const;
       })
       .then(([nextSubjects, nextRecommendations, nextDiagnostic]) => {
         if (!active) return;

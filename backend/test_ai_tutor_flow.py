@@ -7,8 +7,19 @@ from unittest.mock import Mock, patch
 from uuid import uuid4
 
 sys.path.insert(0, str(Path(__file__).parent))
-from fastapi import HTTPException
-from main import AICommunicationRequest, send_ai_communication_message
+from aprendeia.adapters.inbound.http.schemas import AICommunicationRequest
+from aprendeia.container import Services
+from aprendeia.domain.errors import ApplicationError, Forbidden
+from test_support import status_of
+
+OWNED_CONVERSATION = 'aprendeia.application.services.communications.ConversationService.owned_conversation'
+
+
+def send_ai_communication_message(payload, user):
+    """Executa o caso de uso com os adaptadores reais sobre o banco e o provedor simulados."""
+
+    conversation_id = str(payload.conversation_id) if payload.conversation_id else None
+    return Services().tutor_conversations.ask(user, payload.body, conversation_id)
 
 
 class TutorFlowTests(unittest.TestCase):
@@ -32,9 +43,9 @@ class TutorFlowTests(unittest.TestCase):
                 db, provider = self.setup_flow()
                 user = {'id': str(uuid4()), 'role': role, 'full_name': 'Nome privado'}
                 conversation = uuid4()
-                with patch('main.database', return_value=db), patch('main.openai_client', return_value=provider), patch('main.enforce_api_rate_limit'), patch('main.owned_conversation') as owned:
+                with patch('aprendeia.adapters.outbound.supabase.client.database', return_value=db), patch('aprendeia.adapters.outbound.openai_tutor.openai_client', return_value=provider), patch('aprendeia.adapters.outbound.supabase.security.enforce_api_rate_limit'), patch(OWNED_CONVERSATION) as owned:
                     result = send_ai_communication_message(AICommunicationRequest(conversation_id=conversation, body='Explique frações'), user)
-                owned.assert_called_once_with(db, user['id'], str(conversation), expected_kind='ai')
+                owned.assert_called_once_with(user['id'], str(conversation), expected_kind='ai')
                 sent = provider.responses.create.call_args.kwargs
                 self.assertFalse(sent['store'])
                 self.assertNotIn(user['full_name'], json.dumps(sent))
@@ -48,20 +59,20 @@ class TutorFlowTests(unittest.TestCase):
 
     def test_other_users_conversation_is_rejected_before_provider(self):
         db, provider = self.setup_flow()
-        with patch('main.database', return_value=db), patch('main.openai_client', return_value=provider), patch('main.enforce_api_rate_limit'), patch('main.owned_conversation', side_effect=HTTPException(403, 'Acesso negado')):
-            with self.assertRaises(HTTPException) as error:
+        with patch('aprendeia.adapters.outbound.supabase.client.database', return_value=db), patch('aprendeia.adapters.outbound.openai_tutor.openai_client', return_value=provider), patch('aprendeia.adapters.outbound.supabase.security.enforce_api_rate_limit'), patch(OWNED_CONVERSATION, side_effect=Forbidden('Acesso negado')):
+            with self.assertRaises(ApplicationError) as error:
                 send_ai_communication_message(AICommunicationRequest(conversation_id=uuid4(), body='Explique frações'), {'id': str(uuid4()), 'role': 'student'})
-        self.assertEqual(error.exception.status_code, 403)
+        self.assertEqual(status_of(error.exception), 403)
         provider.responses.create.assert_not_called()
         db.table.assert_not_called()
 
     def test_provider_failure_has_safe_response(self):
         db, provider = self.setup_flow()
         provider.responses.create.side_effect = RuntimeError('private-provider-detail')
-        with patch('main.database', return_value=db), patch('main.openai_client', return_value=provider), patch('main.enforce_api_rate_limit'), patch('main.owned_conversation'):
-            with self.assertRaises(HTTPException) as error:
+        with patch('aprendeia.adapters.outbound.supabase.client.database', return_value=db), patch('aprendeia.adapters.outbound.openai_tutor.openai_client', return_value=provider), patch('aprendeia.adapters.outbound.supabase.security.enforce_api_rate_limit'), patch(OWNED_CONVERSATION):
+            with self.assertRaises(ApplicationError) as error:
                 send_ai_communication_message(AICommunicationRequest(conversation_id=uuid4(), body='Explique frações'), {'id': str(uuid4()), 'role': 'student'})
-        self.assertEqual(error.exception.status_code, 502)
+        self.assertEqual(status_of(error.exception), 502)
         self.assertNotIn('private-provider-detail', error.exception.detail)
         db.rpc.assert_not_called()
         db.table.return_value.insert.assert_not_called()
@@ -69,19 +80,19 @@ class TutorFlowTests(unittest.TestCase):
     def test_invalid_provider_answer_does_not_persist_question(self):
         db, provider = self.setup_flow()
         provider.responses.create.return_value.output_text = '{}'
-        with patch('main.database', return_value=db), patch('main.openai_client', return_value=provider), patch('main.enforce_api_rate_limit'), patch('main.owned_conversation'):
-            with self.assertRaises(HTTPException) as caught:
+        with patch('aprendeia.adapters.outbound.supabase.client.database', return_value=db), patch('aprendeia.adapters.outbound.openai_tutor.openai_client', return_value=provider), patch('aprendeia.adapters.outbound.supabase.security.enforce_api_rate_limit'), patch(OWNED_CONVERSATION):
+            with self.assertRaises(ApplicationError) as caught:
                 send_ai_communication_message(AICommunicationRequest(conversation_id=uuid4(), body='Explique frações'), {'id':str(uuid4()),'role':'student'})
-        self.assertEqual(caught.exception.status_code, 502)
+        self.assertEqual(status_of(caught.exception), 502)
         db.rpc.assert_not_called()
 
     def test_database_failure_reports_safe_error_and_never_uses_separate_inserts(self):
         db, provider = self.setup_flow()
         db.rpc.return_value.execute.side_effect = RuntimeError('private-database-detail')
-        with patch('main.database', return_value=db), patch('main.openai_client', return_value=provider), patch('main.enforce_api_rate_limit'), patch('main.owned_conversation'):
-            with self.assertRaises(HTTPException) as caught:
+        with patch('aprendeia.adapters.outbound.supabase.client.database', return_value=db), patch('aprendeia.adapters.outbound.openai_tutor.openai_client', return_value=provider), patch('aprendeia.adapters.outbound.supabase.security.enforce_api_rate_limit'), patch(OWNED_CONVERSATION):
+            with self.assertRaises(ApplicationError) as caught:
                 send_ai_communication_message(AICommunicationRequest(conversation_id=uuid4(), body='Explique frações'), {'id':str(uuid4()),'role':'teacher'})
-        self.assertEqual(caught.exception.status_code, 503)
+        self.assertEqual(status_of(caught.exception), 503)
         self.assertNotIn('private-database-detail', caught.exception.detail)
         db.table.return_value.insert.assert_not_called()
 

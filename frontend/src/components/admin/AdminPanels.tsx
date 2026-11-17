@@ -1,6 +1,7 @@
 import { FormEvent, useEffect, useId, useRef, useState } from 'react';
-import { apiError, apiFetch } from '../../lib/api';
-import { isSupabaseConfigured } from '../../lib/supabase';
+import { gateways } from '../../application/gateways';
+import { failureMessage } from '../../application/result';
+import { isSupabaseConfigured } from '../../adapters/supabase/client';
 
 type Role = 'student' | 'teacher' | 'admin';
 
@@ -78,10 +79,10 @@ function useAdminData<T>(path: string, initial: T) {
     setLoading(true);
     void (async () => {
       try {
-        const response = await apiFetch(path, { signal: controller.signal });
-        if (!response.ok)
-          throw new Error(await apiError(response, 'Não foi possível carregar os dados.'));
-        const body = (await response.json()) as T;
+        const loaded = await gateways().admin.panel<T>(path, controller.signal);
+        if (!loaded.ok)
+          throw new Error(failureMessage(loaded, 'Não foi possível carregar os dados.'));
+        const body = loaded.data;
         if (!controller.signal.aborted) {
           setData(body);
           setError('');
@@ -442,12 +443,9 @@ function DeletionDialog({ target, onCancel, onDeleted }: DeletionDialogProps) {
     setBusy(true);
     setError('');
     try {
-      const response = await apiFetch(`/admin/users/${encodeURIComponent(target.id)}/delete`, {
-        method: 'POST',
-        body: JSON.stringify({ confirmation, reason: reason.trim() }),
-      });
-      if (!response.ok)
-        throw new Error(await apiError(response, 'Não foi possível excluir a conta.'));
+      const deleted = await gateways().admin.deleteUser(target.id, confirmation, reason.trim());
+      if (!deleted.ok)
+        throw new Error(failureMessage(deleted, 'Não foi possível excluir a conta.'));
       onDeleted(target);
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : 'Não foi possível excluir a conta.');

@@ -11,7 +11,10 @@ from fastapi import FastAPI, HTTPException
 from fastapi.testclient import TestClient
 
 sys.path.insert(0, os.path.dirname(__file__))
-from notification_preferences import email_enabled, register_notification_routes
+from aprendeia.adapters.inbound.http.dependencies import require_role, require_weekly_summary_secret
+from aprendeia.adapters.inbound.http.routers import teaching
+from aprendeia.domain.notification_preferences import email_enabled
+from test_support import route_app, services_for
 
 
 class Query:
@@ -88,8 +91,10 @@ class PreferenceRouteTests(unittest.TestCase):
                 raise HTTPException(403, "Somente professores.")
             return self.teacher
 
-        app = FastAPI()
-        register_notification_routes(app, database=lambda: self.db, teacher_dependency=teacher, enforce_limit=self.limit)
+        app = route_app(
+            teaching.router, database=lambda: self.db, enforce_limit=self.limit,
+            overrides={require_role("teacher"): teacher},
+        )
         self.client = TestClient(app)
 
     def test_profile_without_choice_keeps_both_emails(self):
@@ -141,18 +146,16 @@ class DeliveryRespectsPreferenceTests(unittest.TestCase):
         })
 
     def raise_alert(self, **send_options):
-        from main import synchronize_difficulty_alert
-
-        with patch("main.send_smtp_email", **send_options) as send:
-            synchronize_difficulty_alert(
-                self.db, student_id=self.student_id, subject_id=self.subject_id,
-                subject_name="Matemática", topic="Frações", accuracy_percent=40, attempts=3,
-            )
+        send = Mock(**send_options)
+        services_for(self.db, notifier=Mock(alert_available=send)).difficulty_alerts.synchronize(
+            student_id=self.student_id, subject_id=self.subject_id,
+            topic="Frações", accuracy_percent=40, attempts=3,
+        )
         return send
 
     def test_immediate_email_goes_through_ledger_for_the_subject_teacher(self):
         send = self.raise_alert(return_value="skipped")
-        send.assert_called_once_with(db=self.db, teacher_id=self.teacher_id, subject_id=self.subject_id)
+        send.assert_called_once_with(self.teacher_id, self.subject_id)
         self.assertEqual(self.db.rows["difficulty_alerts"][0]["status"], "active")
 
     def test_delivery_failure_keeps_the_panel_alert(self):
@@ -160,12 +163,12 @@ class DeliveryRespectsPreferenceTests(unittest.TestCase):
         self.assertEqual(self.db.rows["difficulty_alerts"][0]["status"], "active")
 
     def run_weekly(self, **runner_options):
-        from main import app, require_weekly_summary_secret
+        from main import app
 
         app.dependency_overrides[require_weekly_summary_secret] = lambda: None
         try:
-            with patch("main.supabase_configured", return_value=True), patch("main.database", return_value=self.db), \
-                    patch("main.persist_access_audit"), patch("email_delivery.run_weekly_summary", **runner_options):
+            with patch("aprendeia.config.settings.supabase_configured", return_value=True), patch("aprendeia.adapters.outbound.supabase.client.database", return_value=self.db), \
+                    patch("aprendeia.adapters.outbound.supabase.security.persist_access_audit"), patch("aprendeia.adapters.outbound.email_delivery.run_weekly_summary", **runner_options):
                 return TestClient(app).post("/internal/weekly-difficulty-summary")
         finally:
             app.dependency_overrides.pop(require_weekly_summary_secret, None)

@@ -1,6 +1,7 @@
 import { FormEvent, useEffect, useId, useState } from 'react';
-import { apiError, apiFetch } from '../lib/api';
-import { isSupabaseConfigured } from '../lib/supabase';
+import { gateways } from '../application/gateways';
+import { failureMessage } from '../application/result';
+import { isSupabaseConfigured } from '../adapters/supabase/client';
 
 type Preferences = {
   email_difficulty_alerts: boolean;
@@ -23,12 +24,12 @@ export function NotificationPreferences() {
     const controller = new AbortController();
     void (async () => {
       try {
-        const response = await apiFetch('/teacher/notification-preferences', {
-          signal: controller.signal,
-        });
-        if (!response.ok)
-          throw new Error(await apiError(response, 'Não foi possível carregar as preferências.'));
-        const data = (await response.json()) as Preferences;
+        const result = await gateways().teacher.notificationPreferences<Preferences>(
+          controller.signal,
+        );
+        if (!result.ok)
+          throw new Error(failureMessage(result, 'Não foi possível carregar as preferências.'));
+        const data = result.data;
         if (controller.signal.aborted) return;
         setPreferences({
           email_difficulty_alerts: data.email_difficulty_alerts,
@@ -54,12 +55,9 @@ export function NotificationPreferences() {
     setError('');
     setMessage('');
     try {
-      const response = await apiFetch('/teacher/notification-preferences', {
-        method: 'PUT',
-        body: JSON.stringify(preferences),
-      });
-      if (!response.ok)
-        throw new Error(await apiError(response, 'Não foi possível salvar as preferências.'));
+      const saved = await gateways().teacher.saveNotificationPreferences(preferences);
+      if (!saved.ok)
+        throw new Error(failureMessage(saved, 'Não foi possível salvar as preferências.'));
       setMessage('Preferências salvas.');
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : 'Não foi possível salvar as preferências.');

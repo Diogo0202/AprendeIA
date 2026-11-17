@@ -1,6 +1,14 @@
 import '@testing-library/jest-dom/vitest';
 import { beforeEach } from 'vitest';
-import { publishLegalDocuments } from '../lib/legalVersions';
+import { publishLegalDocuments } from '../adapters/http/legalVersions';
+import { provideGateways } from '../application/gateways';
+
+// Os testes usam o adaptador real e simulam só o cliente HTTP abaixo dele. O
+// import tardio deixa cada arquivo registrar seus vi.mock antes de o adaptador carregar.
+beforeEach(async () => {
+  const { createHttpGateways } = await import('../adapters/http/gateways');
+  provideGateways(createHttpGateways());
+});
 
 // Fixture isolada: produção recebe estas versões exclusivamente da API.
 beforeEach(() =>

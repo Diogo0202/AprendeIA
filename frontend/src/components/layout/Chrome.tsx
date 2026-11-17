@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react';
 import FallbackAvatar, { type AvatarKey } from '../FallbackAvatar';
 import { PrivacyRequests } from '../PrivacyRequests';
 import { PrivacyPolicyAccess } from '../PrivacyPolicyAccess';
-import { applyInterfaceTheme } from '../../lib/theme';
+import { applyInterfaceTheme } from '../../adapters/browser/theme';
 
 /** Identidade visual compartilhada entre autenticação e painéis. */
 export function Brand() {

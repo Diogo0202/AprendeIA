@@ -4,7 +4,7 @@ import unittest
 
 sys.path.insert(0, os.path.dirname(__file__))
 
-from learning_engine import (
+from aprendeia.domain.learning_engine import (
     build_study_recommendations,
     build_topic_mastery,
     classify_mastery,

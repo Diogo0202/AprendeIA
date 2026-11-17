@@ -5,13 +5,17 @@ from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import MagicMock, Mock, patch
 
-from fastapi import HTTPException
+from aprendeia.domain.errors import ApplicationError
 from starlette.requests import Request
 
 sys.path.insert(0, os.path.dirname(__file__))
 
-from access_audit import AUDIT_ACTIONS, audit_action_for, build_access_audit_record
-from main import PrivacyPolicyAccept, QuestionRequest, app, authenticated_profile, generate_question, require_role
+from aprendeia.domain.access_audit import AUDIT_ACTIONS, audit_action_for, build_access_audit_record
+from aprendeia.adapters.inbound.http.dependencies import authenticated_profile, require_role
+from aprendeia.adapters.inbound.http.schemas import PrivacyPolicyAccept, QuestionRequest
+from aprendeia.adapters.inbound.http.support import RequestAudit
+from aprendeia.bootstrap import registered_routes
+from test_support import services_for, status_of
 
 
 class AccessAuditTests(unittest.TestCase):
@@ -20,7 +24,7 @@ class AccessAuditTests(unittest.TestCase):
 
         protected_prefixes = ("/student", "/teacher", "/admin", "/question-bank", "/communications", "/internal", "/privacy")
         missing = []
-        for route in app.routes:
+        for route in registered_routes():
             if route.path.startswith(protected_prefixes) or route.path in {"/auth/login", "/health"}:
                 for method in route.methods or set():
                     if method not in {"HEAD", "OPTIONS"} and (method, route.path) not in AUDIT_ACTIONS:
@@ -107,13 +111,14 @@ class AccessAuditTests(unittest.TestCase):
             "options": ["0", "1/2", "1", "2"], "correct_index": 1,
             "explanation": "Metade.",
         }
-        with patch("main.supabase_configured", return_value=True), patch("main.database", return_value=db), patch(
-            "main.enforce_api_rate_limit"
-        ), patch("main.generate_with_ai", return_value=generated):
-            result = generate_question(
-                request, QuestionRequest(subject="Matemática", topic="Frações"),
-                {"id": "00000000-0000-0000-0000-000000000001", "role": "teacher"},
-            )
+        tutor = Mock()
+        tutor.generate_question.return_value = generated
+        payload = QuestionRequest(subject="Matemática", topic="Frações")
+        result = services_for(db, tutor=tutor).question_bank.generate(
+            {"id": "00000000-0000-0000-0000-000000000001", "role": "teacher"},
+            subject=payload.subject, topic=payload.topic, difficulty=payload.difficulty,
+            audit=RequestAudit(request),
+        )
 
         self.assertEqual(result["id"], question_id)
         self.assertEqual(request.state.audit_resource_id, question_id)
@@ -163,7 +168,7 @@ class AccessAuditTests(unittest.TestCase):
         self.assertEqual(build(valid)["resource_id"], valid)
 
     def test_audit_network_hash_is_filled_when_pepper_is_configured(self):
-        from auth_security import rate_limit_hash
+        from test_support import rate_limit_hash
 
         secret = "p" * 40
         audit = rate_limit_hash("audit_network", "203.0.113.7", secret)
@@ -204,7 +209,7 @@ class AccessAuditTests(unittest.TestCase):
         self.assertEqual(audit_action_for("GET", "/admin/audit-logs"), "admin.audit_logs.list")
         with self.assertRaises(Exception) as error:
             require_role("admin")({"role": "teacher"})
-        self.assertEqual(error.exception.status_code, 403)
+        self.assertEqual(status_of(error.exception), 403)
 
     def test_migration_keeps_logs_immutable_and_backend_only(self):
         migration = (
@@ -307,7 +312,7 @@ class AccessAuditTests(unittest.TestCase):
                 self.assertIn("e-mail", content)
 
     def test_privacy_accept_endpoint_and_version_validation(self):
-        endpoint = next(route for route in app.routes if route.path == "/privacy/accept")
+        endpoint = next(route for route in registered_routes() if route.path == "/privacy/accept")
         self.assertIn("POST", endpoint.methods)
         accepted = PrivacyPolicyAccept(policy_version="1.7", terms_version="1.0")
         self.assertEqual((accepted.policy_version, accepted.terms_version), ("1.7", "1.0"))
@@ -339,10 +344,10 @@ class AccessAuditTests(unittest.TestCase):
             "headers": [], "query_string": b"", "server": ("test", 80),
             "client": ("127.0.0.1", 1234), "scheme": "http",
         })
-        with patch("main.supabase_configured", return_value=True), patch("main.database", return_value=db):
-            with self.assertRaises(HTTPException) as error:
+        with patch("aprendeia.config.settings.supabase_configured", return_value=True), patch("aprendeia.adapters.outbound.supabase.client.database", return_value=db):
+            with self.assertRaises(ApplicationError) as error:
                 authenticated_profile(request, "Bearer valid-token")
-        self.assertEqual(error.exception.status_code, 428)
+        self.assertEqual(status_of(error.exception), 428)
         self.assertIn("Termos de Uso", error.exception.detail)
 
     def test_terms_of_use_migration_requires_both_acceptances(self):
@@ -369,10 +374,10 @@ class AccessAuditTests(unittest.TestCase):
             "headers": [], "query_string": b"", "server": ("test", 80),
             "client": ("127.0.0.1", 1234), "scheme": "http",
         })
-        with patch("main.supabase_configured", return_value=True), patch("main.database", return_value=db):
-            with self.assertRaises(HTTPException) as error:
+        with patch("aprendeia.config.settings.supabase_configured", return_value=True), patch("aprendeia.adapters.outbound.supabase.client.database", return_value=db):
+            with self.assertRaises(ApplicationError) as error:
                 authenticated_profile(request, "Bearer valid-token")
-        self.assertEqual(error.exception.status_code, 428)
+        self.assertEqual(status_of(error.exception), 428)
 
 
 if __name__ == "__main__":

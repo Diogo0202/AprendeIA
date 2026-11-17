@@ -2,7 +2,7 @@ import { FormEvent, useState } from 'react';
 import { TermsOfUseAccess } from '../LegalDocuments';
 import { PrivacyConsentCheckbox, PrivacyPolicyAccess } from '../PrivacyPolicyAccess';
 import { TurnstileWidget } from '../TurnstileWidget';
-import type { SignupRole } from '../../types/app';
+import type { SignupRole } from '../../domain/app';
 
 /** Formulário de entrada com mensagens de erro próximas à ação principal. */
 export function Login({
