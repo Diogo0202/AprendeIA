@@ -244,7 +244,8 @@ class TeacherContentService:
 
     @staticmethod
     def _owned_record(user: Row, assignment: dict[str, str], values: Row) -> Row:
-        return {"teacher_id": user["id"], "subject_id": assignment["subject_id"], **values}
+        # A posse vem por último: nenhum campo do cliente pode trocar o dono da linha.
+        return {**values, "teacher_id": user["id"], "subject_id": assignment["subject_id"]}
 
 
 class TeacherRecommendationService:
