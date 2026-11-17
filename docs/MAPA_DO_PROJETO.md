@@ -19,7 +19,7 @@ O projeto separa a interface React, o backend em arquitetura hexagonal (domínio
 - `backend/aprendeia/application/ports/` — contratos (Protocol) que os casos de uso exigem de banco, identidade, IA, e-mail e limites.
 - `backend/aprendeia/application/services/` — casos de uso por contexto: acesso, comunicação, banco de questões, trilha do estudante, professor, administração e direitos do titular.
 - `backend/aprendeia/adapters/inbound/http/` — FastAPI: `routers/`, `schemas.py`, `dependencies.py` (sessão e cargo), `middleware.py` (cabeçalhos e auditoria) e `support.py` (erro de negócio → status HTTP).
-- `backend/aprendeia/adapters/outbound/` — Supabase (`supabase/`), OpenAI (`openai_tutor.py`), e-mail (`email_delivery.py`), Turnstile (`turnstile.py`) e modo demonstrativo (`memory/`).
+- `backend/aprendeia/adapters/outbound/` — Supabase (`supabase/`), OpenAI (`openai_tutor.py`), e-mail (`email_delivery.py`) e Turnstile (`turnstile.py`).
 - `backend/aprendeia/container.py` e `bootstrap.py` — ligam casos de uso aos adaptadores e montam a aplicação.
 - `backend/test_architecture.py` — falha se uma camada importar outra mais externa.
 - `supabase/migrations/` — cria tabelas, relações, funções e políticas RLS.

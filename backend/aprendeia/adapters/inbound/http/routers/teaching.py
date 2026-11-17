@@ -19,8 +19,6 @@ router = APIRouter(prefix="/teacher")
 def teacher_students(user: TeacherUser, services: RequestServices):
     """Lista apenas estudantes matriculados na disciplina do professor atual."""
 
-    if not services.persistence.configured():
-        return services.demo.teacher_students()
     return services.teacher_overview.students(user)
 
 
@@ -28,8 +26,6 @@ def teacher_students(user: TeacherUser, services: RequestServices):
 def teacher_difficulty_alerts(user: TeacherUser, services: RequestServices):
     """Devolve ao professor somente alertas ativos da própria disciplina."""
 
-    if not services.persistence.configured():
-        return services.demo.teacher_alerts()
     return services.teacher_overview.difficulty_alerts(user)
 
 

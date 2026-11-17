@@ -43,8 +43,6 @@ def list_questions(
 
     if subject is not None:
         subject = sanitize_prompt_value(subject, max_length=SUBJECT_MAX_LENGTH)
-    if not services.persistence.configured():
-        return services.demo.list_questions(user, subject, difficulty)
     return services.question_bank.list_questions(user, subject, difficulty)
 
 
@@ -53,8 +51,6 @@ def generate_question(request: QuestionRequest, user: TeacherUser, services: Req
     """Gera com IA e persiste a nova questão quando existe banco configurado."""
 
     parameters = {"subject": request.subject, "topic": request.topic, "difficulty": request.difficulty}
-    if not services.persistence.configured():
-        return services.demo.generate(**parameters, audit=audit)
     return services.question_bank.generate(user, **parameters, audit=audit)
 
 
@@ -79,8 +75,6 @@ def next_question(user: StudentUser, services: RequestServices, subject: str = "
     """Seleciona uma questão no nível calculado para o estudante autenticado."""
 
     subject = sanitize_prompt_value(subject, max_length=SUBJECT_MAX_LENGTH)
-    if not services.persistence.configured():
-        return services.demo.next_question(user, subject)
     return services.question_bank.next_question(user, subject)
 
 
@@ -92,8 +86,6 @@ def answer_question(
 
     question_id = validate_question_id(question_id)
     audit.resource(question_id)
-    if not services.persistence.configured():
-        return services.demo.answer(user, question_id, selected_index=answer.selected_index)
     return services.question_bank.answer(
         user,
         question_id,
@@ -106,8 +98,6 @@ def answer_question(
 def student_subjects(user: StudentUser, services: RequestServices):
     """Entrega o catálogo real somente para o estudante autenticado."""
 
-    if not services.persistence.configured():
-        return services.demo.subjects()
     return services.study_plan.catalog(user["id"])
 
 
@@ -115,8 +105,6 @@ def student_subjects(user: StudentUser, services: RequestServices):
 def student_recommendations(user: StudentUser, services: RequestServices):
     """Explica tópicos dominados, frágeis e as próximas aulas indicadas."""
 
-    if not services.persistence.configured():
-        return services.demo.recommendations()
     return services.study_plan.recommendations(user["id"])
 
 
@@ -124,8 +112,6 @@ def student_recommendations(user: StudentUser, services: RequestServices):
 def student_diagnostic(user: StudentUser, services: RequestServices):
     """Cria a primeira medição com questões publicadas de várias disciplinas."""
 
-    if not services.persistence.configured():
-        return services.demo.diagnostic()
     return services.diagnostics.current(user)
 
 
@@ -182,8 +168,6 @@ def student_gamification(response: Response, user: StudentUser, services: Reques
     """Calcula a jornada usando apenas a atividade do estudante autenticado."""
 
     response.headers["Cache-Control"] = "no-store"
-    if not services.persistence.configured():
-        return services.demo.gamification()
     return services.student_profile.gamification(user)
 
 

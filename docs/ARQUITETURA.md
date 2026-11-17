@@ -61,7 +61,7 @@ Alunos conversam apenas com seus professores e com a IA. Professores conversam c
 
 ## Modo demonstrativo
 
-Quando as variáveis do Supabase não existem, o projeto usa dados locais. Essa escolha facilita apresentações acadêmicas offline. O modo é claramente separado da execução conectada e não deve ser usado em produção.
+Quando as variáveis do Supabase não existem no frontend, a interface usa dados locais e não chama o backend; o backend sem Supabase recusa as rotas autenticadas com 503. Essa escolha facilita apresentações acadêmicas offline. O modo é claramente separado da execução conectada e não deve ser usado em produção.
 
 ## Arquivos gerados
 

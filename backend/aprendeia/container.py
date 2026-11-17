@@ -10,7 +10,6 @@ from functools import cached_property
 from typing import Callable
 
 from aprendeia.adapters.outbound.email_delivery import EmailTeacherNotifier
-from aprendeia.adapters.outbound.memory.store import SEED_QUESTIONS, demo_store
 from aprendeia.adapters.outbound.openai_tutor import OpenAITutor
 from aprendeia.adapters.outbound.supabase.client import DatabaseProvider, RequestDatabase, SupabaseGate
 from aprendeia.adapters.outbound.supabase.learning import (
@@ -63,7 +62,6 @@ from aprendeia.application.services.communications import (
     ConversationService,
     TutorConversationService,
 )
-from aprendeia.application.services.demo_mode import DemoLearningService
 from aprendeia.application.services.question_bank import DifficultyAlertService, QuestionBankService
 from aprendeia.application.services.student_learning import (
     DiagnosticService,
@@ -187,10 +185,6 @@ class Services:
             limiter=self.limiter,
             alerts=self.difficulty_alerts,
         )
-
-    @cached_property
-    def demo(self) -> DemoLearningService:
-        return DemoLearningService(tutor=self.tutor, store=demo_store, seed_questions=SEED_QUESTIONS)
 
     @cached_property
     def _learning_repository(self) -> SupabaseStudentLearning:
