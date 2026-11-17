@@ -1,10 +1,19 @@
+import { gateways } from '../../application/gateways';
 import { type ClassRow, type TeacherRow } from '../../domain/admin';
 import { useAdminData } from './useAdminData';
 
 /** Consulta de todos os professores e turmas, sem edição. */
 export function AdminTeachersClasses() {
-  const teachers = useAdminData<TeacherRow[]>('/admin/teachers', []);
-  const classes = useAdminData<ClassRow[]>('/admin/classes', []);
+  const teachers = useAdminData<TeacherRow[]>(
+    'teachers',
+    (signal) => gateways().admin.teachers<TeacherRow[]>(signal),
+    [],
+  );
+  const classes = useAdminData<ClassRow[]>(
+    'classes',
+    (signal) => gateways().admin.classes<ClassRow[]>(signal),
+    [],
+  );
   const error = teachers.error || classes.error;
 
   return (
