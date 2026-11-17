@@ -62,7 +62,7 @@ async function login(credentials: LoginCredentials): Promise<LoginOutcome> {
   };
 }
 
-export function createHttpGateways(): Gateways {
+export function createHttpGateways(): Omit<Gateways, 'session'> {
   return {
     account: {
       login,

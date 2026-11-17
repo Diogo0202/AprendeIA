@@ -1,6 +1,5 @@
 import { FormEvent, useEffect, useState } from 'react';
-import { supabase } from '../../adapters/supabase/client';
-import { gateways } from '../../application/gateways';
+import { gateways, isConnected } from '../../application/gateways';
 import type {
   TeacherClass,
   TeacherOverview,
@@ -21,7 +20,7 @@ import {
 export function useTeacherDashboard() {
   const [activeTab, setActiveTab] = useState<TeacherTab>('overview');
   const [overview, setOverview] = useState<TeacherOverview>(
-    supabase
+    isConnected()
       ? {
           subject: 'Sua disciplina',
           class_count: 0,
@@ -37,16 +36,20 @@ export function useTeacherDashboard() {
           average_accuracy: 60,
         },
   );
-  const [classes, setClasses] = useState<TeacherClass[]>(supabase ? [] : demoTeacherClasses);
-  const [selectedClassId, setSelectedClassId] = useState(supabase ? '' : demoTeacherClasses[0].id);
+  const [classes, setClasses] = useState<TeacherClass[]>(isConnected() ? [] : demoTeacherClasses);
+  const [selectedClassId, setSelectedClassId] = useState(
+    isConnected() ? '' : demoTeacherClasses[0].id,
+  );
   const [selectedClass, setSelectedClass] = useState<TeacherClass>(
-    supabase ? emptyTeacherClass : demoTeacherClasses[0],
+    isConnected() ? emptyTeacherClass : demoTeacherClasses[0],
   );
   const [selectedStudentId, setSelectedStudentId] = useState(
-    supabase ? '' : demoTeacherStudents[0].id,
+    isConnected() ? '' : demoTeacherStudents[0].id,
   );
-  const [alerts, setAlerts] = useState<TeacherAlert[]>(supabase ? [] : demoTeacherAlerts);
-  const [contents, setContents] = useState<TeacherContent[]>(supabase ? [] : demoTeacherContents);
+  const [alerts, setAlerts] = useState<TeacherAlert[]>(isConnected() ? [] : demoTeacherAlerts);
+  const [contents, setContents] = useState<TeacherContent[]>(
+    isConnected() ? [] : demoTeacherContents,
+  );
   const [recommendation, setRecommendation] = useState<TeacherRecommendation | null>(null);
   const [message, setMessage] = useState('Painel pronto para acompanhar sua disciplina.');
   const [busy, setBusy] = useState(false);
@@ -54,7 +57,7 @@ export function useTeacherDashboard() {
   useEffect(() => {
     let active = true;
     async function loadDashboard() {
-      if (!supabase) return;
+      if (!isConnected()) return;
       setBusy(true);
       try {
         const { teacher } = gateways();
@@ -95,7 +98,7 @@ export function useTeacherDashboard() {
     let active = true;
     async function loadClass() {
       if (!selectedClassId) return;
-      if (!supabase) {
+      if (!isConnected()) {
         const demoClass = demoTeacherClasses.find((item) => item.id === selectedClassId);
         if (demoClass) {
           setSelectedClass(demoClass);
@@ -164,7 +167,7 @@ export function useTeacherDashboard() {
     setBusy(true);
     try {
       let created: TeacherClass;
-      if (supabase) {
+      if (isConnected()) {
         const saved = await gateways().teacher.createClass<TeacherClass>(draft);
         if (!saved.ok) throw new Error(saved.detail);
         created = saved.data;
@@ -200,7 +203,7 @@ export function useTeacherDashboard() {
     if (!selectedClassId) return;
     setBusy(true);
     try {
-      if (supabase) {
+      if (isConnected()) {
         const { teacher } = gateways();
         const added = await teacher.addStudent(selectedClassId, email);
         if (!added.ok) throw new Error(added.detail);
@@ -225,7 +228,7 @@ export function useTeacherDashboard() {
   }
 
   async function removeStudent(studentId: string) {
-    if (!supabase || !selectedClassId) {
+    if (!isConnected() || !selectedClassId) {
       setMessage('A remoção fica disponível quando o projeto estiver conectado ao Supabase.');
       return;
     }
@@ -248,7 +251,7 @@ export function useTeacherDashboard() {
 
   async function exportReport() {
     if (!selectedClassId) return;
-    if (!supabase) {
+    if (!isConnected()) {
       setMessage(
         'Relatório de demonstração preparado. Conecte o Supabase para baixar dados reais.',
       );
@@ -284,7 +287,7 @@ export function useTeacherDashboard() {
     setBusy(true);
     try {
       let created: TeacherContent;
-      if (supabase) {
+      if (isConnected()) {
         const saved = await gateways().teacher.createContent<TeacherContent>(draft);
         if (!saved.ok) throw new Error(saved.detail);
         created = saved.data;
@@ -313,7 +316,7 @@ export function useTeacherDashboard() {
       setMessage('Escolha um arquivo CSV ou JSON de até 100 KB.');
       return;
     }
-    if (!supabase) {
+    if (!isConnected()) {
       setMessage('Arquivo validado. A importação real precisa do Supabase conectado.');
       return;
     }
@@ -344,7 +347,7 @@ export function useTeacherDashboard() {
     setBusy(true);
     setRecommendation(null);
     try {
-      if (supabase) {
+      if (isConnected()) {
         const generated = await gateways().teacher.recommend<TeacherRecommendation>(
           selectedClassId,
           selectedStudentId || undefined,

@@ -19,16 +19,39 @@ export function readConfig(env) {
   return { endpoint: url.toString(), secret };
 }
 
-const fields = ["smtp_accepted", "provider_accepted", "received", "teachers_skipped", "failed_deliveries", "unknown_deliveries", "processing_deliveries"];
+const fields = [
+  "smtp_accepted",
+  "provider_accepted",
+  "received",
+  "teachers_skipped",
+  "failed_deliveries",
+  "unknown_deliveries",
+  "processing_deliveries",
+];
+const SUCCESS_STATUSES = ["smtp_accepted", "provider_accepted", "no_deliveries"];
+const KNOWN_STATUSES = [...SUCCESS_STATUSES, "failed", "unknown", "processing"];
+const PENDING_COUNTS = ["failed_deliveries", "unknown_deliveries", "processing_deliveries"];
+
+/** Nunca ecoa detail/status arbitrário recebido pela rede: só valores conhecidos saem no relatório. */
+function outcomeOf(status, body, valid) {
+  if (status !== 200) return `http_${Number.isInteger(status) ? status : 0}`;
+  if (!valid) return "invalid_response";
+  return KNOWN_STATUSES.includes(body?.status) ? body.status : "invalid_response";
+}
+
 export function interpret(status, body) {
   const counts = Object.fromEntries(fields.map((key) => [key, body?.[key]]));
   const valid = fields.every((key) => Number.isSafeInteger(counts[key]) && counts[key] >= 0);
-  const success = ["smtp_accepted", "provider_accepted", "no_deliveries"].includes(body?.status);
-  const ok = status === 200 && valid && success && counts.failed_deliveries === 0 && counts.unknown_deliveries === 0 && counts.processing_deliveries === 0;
-  // Nunca ecoa detail/status arbitrário recebido pela rede.
-  const outcome = status !== 200 ? `http_${Number.isInteger(status) ? status : 0}` :
-    !valid ? "invalid_response" : ["smtp_accepted", "provider_accepted", "no_deliveries", "failed", "unknown", "processing"].includes(body?.status) ? body.status : "invalid_response";
-  return { ok, outcome, ...Object.fromEntries(fields.map((key) => [key, valid ? counts[key] : 0])) };
+  const ok =
+    status === 200 &&
+    valid &&
+    SUCCESS_STATUSES.includes(body?.status) &&
+    PENDING_COUNTS.every((key) => counts[key] === 0);
+  return {
+    ok,
+    outcome: outcomeOf(status, body, valid),
+    ...Object.fromEntries(fields.map((key) => [key, valid ? counts[key] : 0])),
+  };
 }
 
 export async function triggerSummary(config, { fetchImpl = fetch } = {}) {

@@ -1,6 +1,5 @@
 import { useEffect, useState } from 'react';
-import { gateways } from '../../application/gateways';
-import { isSupabaseConfigured } from '../../adapters/supabase/client';
+import { gateways, isConnected } from '../../application/gateways';
 import type { StudentSubject } from '../../domain/learning';
 import { demoSubjects } from './demoData';
 import { Header } from '../layout/Chrome';
@@ -106,11 +105,11 @@ export function PracticeProfile({
   } | null>(null);
   const [loading, setLoading] = useState(false);
   const [practiceSubjects, setPracticeSubjects] = useState<string[]>(
-    isSupabaseConfigured ? [initialSubject] : demoSubjects.map((item) => item.name),
+    isConnected() ? [initialSubject] : demoSubjects.map((item) => item.name),
   );
 
   useEffect(() => {
-    if (!isSupabaseConfigured) return;
+    if (!isConnected()) return;
     let active = true;
     gateways()
       .student.subjects<StudentSubject[]>()

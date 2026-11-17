@@ -47,7 +47,7 @@ O sistema não permite escolher `admin` na tela. A primeira conta deve ser promo
 - `frontend/src/App.tsx` — coordenação do perfil administrativo.
 - `frontend/src/components/admin/AdminCatalog.tsx` — visão geral e árvore de conteúdo.
 - `frontend/src/components/admin/AuditLogPanel.tsx` — consulta segura da trilha de acesso.
-- `backend/main.py` — modelos e rotas `/admin/*`.
-- `backend/access_audit.py` — catálogo das ações auditadas.
+- `backend/aprendeia/adapters/inbound/http/routers/administration.py` e `backend/aprendeia/adapters/inbound/http/schemas.py` — rotas e modelos `/admin/*`; regras em `backend/aprendeia/application/services/administration.py`.
+- `backend/aprendeia/domain/access_audit.py` — catálogo das ações auditadas.
 - `supabase/migrations/20260911120000_teacher_registration_workflow.sql` — solicitação e aprovação docente.
 - [CADASTRO_PROFESSOR.md](CADASTRO_PROFESSOR.md) — fluxo mais detalhado.

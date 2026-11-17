@@ -14,7 +14,7 @@ A área da administração foi reorganizada em abas: Visão geral, Desempenho, P
 
 Só há totais. Nenhum nome, identificador ou resposta de aluno sai da rota. Grupos com menos de **3 alunos** recebem `small_sample: true` e os indicadores vêm nulos, para que um número não revele o desempenho de uma pessoa. As consultas são limitadas a 10.000 linhas por tabela.
 
-O cálculo fica em `backend/admin_panel.py` (`summarize_group` e `build_performance`), testado sem banco em `backend/test_admin_panel.py`.
+O cálculo fica em `backend/aprendeia/domain/admin_performance.py` (`summarize_group` e `build_performance`), testado sem banco em `backend/test_admin_panel.py`.
 
 ## Professores e turmas
 

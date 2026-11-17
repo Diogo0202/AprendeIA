@@ -27,7 +27,7 @@ async function mount(page: Page, teacher = false) {
   await page.route('**/src/adapters/supabase/client.ts*', (route) =>
     route.fulfill({
       contentType: 'text/javascript',
-      body: 'export const apiUrl = "/api"; export async function accessToken() { return null; }',
+      body: 'export const apiUrl = "/api"; export const isSupabaseConfigured = true; export const supabase = null; export const turnstileSiteKey = ""; export async function accessToken() { return null; }',
     }),
   );
   await page.route('**/__leaderboard_component_test__', (route) =>
@@ -50,6 +50,10 @@ async function mount(page: Page, teacher = false) {
       const React = reactModule.default ?? reactModule;
       const domModule = await load('/node_modules/.vite/deps/react-dom_client.js');
       const { createRoot } = domModule.default ?? domModule;
+      // Mesmas portas do main.tsx: o componente fala com a API por elas.
+      const { provideGateways } = await load('/src/application/gateways.ts');
+      const { createGateways } = await load('/src/composition.ts');
+      provideGateways(createGateways());
       const { Leaderboard } = await load('/src/components/student/Leaderboard.tsx');
       const { GamificationAchievements } = await load(
         '/src/components/student/GamificationAchievements.tsx',

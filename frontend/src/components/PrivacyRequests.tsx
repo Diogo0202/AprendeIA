@@ -1,52 +1,15 @@
-import { FormEvent, useCallback, useEffect, useId, useRef, useState } from 'react';
-import { gateways } from '../application/gateways';
-import { failureMessage } from '../application/result';
-import { isSupabaseConfigured } from '../adapters/supabase/client';
-
-type Kind =
-  | 'access'
-  | 'correction'
-  | 'anonymization'
-  | 'deletion'
-  | 'confirmation'
-  | 'sharing'
-  | 'opposition'
-  | 'revocation'
-  | 'portability'
-  | 'automated_review';
-type PrivacyRequest = {
-  id: string;
-  user_id?: string | null;
-  kind: Kind;
-  status: 'pending' | 'completed' | 'rejected' | 'cancelled';
-  details: string;
-  corrections?: Partial<Record<'full_name' | 'grade' | 'goal', string>> | null;
-  response: string | null;
-  created_at: string;
-  resolved_at: string | null;
-  expires_at: string | null;
-};
-const kinds: Record<Kind, string> = {
-  access: 'Acesso aos dados',
-  correction: 'Correção',
-  anonymization: 'Anonimização',
-  deletion: 'Exclusão',
-  confirmation: 'Confirmação de tratamento',
-  sharing: 'Informações sobre compartilhamento',
-  opposition: 'Oposição ao tratamento',
-  revocation: 'Revogação de consentimento',
-  portability: 'Portabilidade',
-  automated_review: 'Revisão de decisão automatizada',
-};
-const statuses = {
-  pending: 'Pendente',
-  completed: 'Concluído',
-  rejected: 'Recusado',
-  cancelled: 'Cancelado',
-};
+import { useEffect, useId, useRef, useState } from 'react';
+import { isConnected } from '../application/gateways';
+import {
+  privacyRequestKinds,
+  privacyRequestStatuses,
+  type PrivacyRequest,
+  type PrivacyRequestKind,
+} from '../domain/privacy';
+import { usePrivacyRequestPanel } from './usePrivacyRequestPanel';
 
 /** A consequência aparece antes do envio, pois abrir o pedido ainda não apaga dados. */
-function Consequences({ kind }: { kind: Kind }) {
+function Consequences({ kind }: { kind: PrivacyRequestKind }) {
   if (
     [
       'confirmation',
@@ -126,136 +89,34 @@ export function AdminPrivacyRequests() {
 }
 
 /** Atualiza a lista pelo servidor após cada operação, sem simular persistência no modo demo. */
-function RequestPanel({ admin = false }: { admin?: boolean }) {
-  const [requests, setRequests] = useState<PrivacyRequest[]>([]);
-  const [ownIds, setOwnIds] = useState<string[]>([]);
-  const [kind, setKind] = useState<Kind>('access');
-  const [details, setDetails] = useState('');
-  const [corrections, setCorrections] = useState({ full_name: '', grade: '', goal: '' });
-  const [changedFields, setChangedFields] = useState<string[]>([]);
-  const [message, setMessage] = useState('');
-  const [error, setError] = useState('');
-  const [busy, setBusy] = useState(false);
-  const [loading, setLoading] = useState(true);
-  const [loaded, setLoaded] = useState(false);
-  const headingId = useId();
-  const endpoint = admin ? '/admin/privacy-requests' : '/privacy/requests';
-
-  const load = useCallback(
-    async (signal?: AbortSignal) => {
-      if (!isSupabaseConfigured) {
-        setLoading(false);
-        return;
-      }
-      setLoading(true);
-      setLoaded(false);
-      try {
-        // A lista pessoal identifica pedidos próprios sem depender de campos fora do contrato.
-        const { privacy } = gateways();
-        const results = await Promise.all([
-          privacy.requests<PrivacyRequest[]>(admin ? 'all' : 'own', signal),
-          ...(admin ? [privacy.requests<PrivacyRequest[]>('own', signal)] : []),
-        ]);
-        const loaded = results.map((result) => {
-          if (!result.ok)
-            throw new Error(failureMessage(result, 'Não foi possível carregar os pedidos.'));
-          return result.data;
-        });
-        const items = loaded[0];
-        const own = admin ? loaded[1] : [];
-        if (signal?.aborted) return;
-        setRequests(items);
-        setOwnIds(own.map((item) => item.id));
-        setLoaded(true);
-      } catch (cause) {
-        if (!signal?.aborted)
-          setError(cause instanceof Error ? cause.message : 'Falha ao carregar os pedidos.');
-      } finally {
-        if (!signal?.aborted) setLoading(false);
-      }
-    },
-    [admin, endpoint],
-  );
-
-  useEffect(() => {
-    const controller = new AbortController();
-    void load(controller.signal);
-    return () => controller.abort();
-  }, [load]);
-
-  async function mutate(path: string, body?: object) {
-    if (busy || !isSupabaseConfigured) return;
-    setBusy(true);
-    setError('');
-    setMessage('');
-    try {
-      const submitted = await gateways().privacy.submit(path, body);
-      if (!submitted.ok)
-        throw new Error(failureMessage(submitted, 'Não foi possível concluir a operação.'));
-      setMessage('Operação registrada.');
-      if (path === '/privacy/requests') {
-        setDetails('');
-        setCorrections({ full_name: '', grade: '', goal: '' });
-        setChangedFields([]);
-      }
-      await load();
-    } catch (cause) {
-      setError(cause instanceof Error ? cause.message : 'Falha de conexão. Tente novamente.');
-    } finally {
-      setBusy(false);
-    }
-  }
-
-  async function download(request: PrivacyRequest) {
-    if (busy || !isSupabaseConfigured) return;
-    setBusy(true);
-    setError('');
-    setMessage('');
-    try {
-      const exported = await gateways().privacy.exportData(request.id);
-      if (!exported.ok)
-        throw new Error(failureMessage(exported, 'Não foi possível baixar os dados.'));
-      // O arquivo recebe um nome fixo para não carregar dados pessoais no nome do download.
-      const url = URL.createObjectURL(exported.data);
-      const anchor = document.createElement('a');
-      anchor.href = url;
-      anchor.download = 'meus-dados.json';
-      document.body.append(anchor);
-      anchor.click();
-      anchor.remove();
-      window.setTimeout(() => URL.revokeObjectURL(url), 1000);
-      setMessage('Download iniciado.');
-    } catch (cause) {
-      setError(cause instanceof Error ? cause.message : 'Falha ao baixar os dados.');
-    } finally {
-      setBusy(false);
-    }
-  }
-
-  function submit(event: FormEvent) {
-    event.preventDefault();
-    if (details.length > 1000) return;
-    const changed = Object.fromEntries(
-      Object.entries(corrections).filter(([field]) => changedFields.includes(field)),
-    );
-    if (kind === 'correction' && !Object.keys(changed).length) {
-      setError('Edite ao menos um campo para pedir a correção.');
-      return;
-    }
-    if (kind === 'correction' && 'full_name' in changed && changed.full_name.trim().length < 2) {
-      setError('O nome precisa de pelo menos dois caracteres.');
-      return;
-    }
-    void mutate('/privacy/requests', {
-      kind,
-      details,
-      ...(kind === 'correction' && Object.keys(changed).length ? { corrections: changed } : {}),
-    });
-  }
+function RequestPanel(props: { admin?: boolean }) {
+  const { admin } = props;
+  const {
+    requests,
+    ownIds,
+    kind,
+    setKind,
+    details,
+    setDetails,
+    corrections,
+    setCorrections,
+    setChangedFields,
+    message,
+    error,
+    setError,
+    busy,
+    loading,
+    loaded,
+    headingId,
+    load,
+    mutate,
+    download,
+    submit,
+  } = usePrivacyRequestPanel(props);
 
   return (
     <div className="privacy-requests" aria-busy={busy || loading}>
-      {!isSupabaseConfigured && (
+      {!isConnected() && (
         <p role="status">Modo demonstração: persistência indisponível. Nenhum pedido será salvo.</p>
       )}
       <p>Pedidos e respostas detalhados ficam disponíveis por até 7 dias.</p>
@@ -266,12 +127,15 @@ function RequestPanel({ admin = false }: { admin?: boolean }) {
         </p>
       ) : (
         <form onSubmit={submit} aria-label="Novo pedido de privacidade">
-          <fieldset disabled={busy || !isSupabaseConfigured}>
+          <fieldset disabled={busy || !isConnected()}>
             <legend>Novo pedido</legend>
             <label>
               Tipo de pedido
-              <select value={kind} onChange={(event) => setKind(event.target.value as Kind)}>
-                {Object.entries(kinds).map(([value, label]) => (
+              <select
+                value={kind}
+                onChange={(event) => setKind(event.target.value as PrivacyRequestKind)}
+              >
+                {Object.entries(privacyRequestKinds).map(([value, label]) => (
                   <option key={value} value={value}>
                     {label}
                   </option>
@@ -326,7 +190,7 @@ function RequestPanel({ admin = false }: { admin?: boolean }) {
         <button
           type="button"
           className="outline-button"
-          disabled={busy || loading || !isSupabaseConfigured}
+          disabled={busy || loading || !isConnected()}
           onClick={() => {
             setError('');
             void load();
@@ -341,7 +205,7 @@ function RequestPanel({ admin = false }: { admin?: boolean }) {
         {requests.map((request) => (
           <article key={request.id} className="privacy-request-card">
             <h4>
-              {kinds[request.kind]} · {statuses[request.status]}
+              {privacyRequestKinds[request.kind]} · {privacyRequestStatuses[request.status]}
             </h4>
             <p>Protocolo: {request.id}</p>
             {admin && request.user_id && <p>Conta: {request.user_id}</p>}
@@ -446,7 +310,7 @@ function Resolution({
             anonymization: 'ANONIMIZAR',
             opposition: 'MEDIDA CONFIRMADA',
             revocation: 'MEDIDA CONFIRMADA',
-          } as Partial<Record<Kind, string>>
+          } as Partial<Record<PrivacyRequestKind, string>>
         )[request.kind]
       : undefined;
   return (

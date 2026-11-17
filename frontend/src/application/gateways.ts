@@ -12,3 +12,8 @@ export function gateways(): Gateways {
   if (!provided) throw new Error('Gateways não configurados.');
   return provided;
 }
+
+/** Atalho para a pergunta mais comum das telas: há servidor ou é demonstração? */
+export function isConnected(): boolean {
+  return gateways().session.connected();
+}

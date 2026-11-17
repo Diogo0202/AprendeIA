@@ -1,7 +1,6 @@
 import { FormEvent, useEffect, useMemo, useState } from 'react';
-import { gateways } from '../application/gateways';
+import { gateways, isConnected } from '../application/gateways';
 import { failureMessage } from '../application/result';
-import { isSupabaseConfigured } from '../adapters/supabase/client';
 
 type CommunicationRole = 'student' | 'teacher' | 'admin';
 type CommunicationMode = 'direct' | 'ai';
@@ -63,9 +62,7 @@ const demoContacts: Record<CommunicationRole, Contact[]> = {
 
 /** Centraliza conversa humana e IA sem misturar seus destinos no backend. */
 export function CommunicationCenter({ role, requestedMode }: CommunicationCenterProps) {
-  const [contacts, setContacts] = useState<Contact[]>(
-    isSupabaseConfigured ? [] : demoContacts[role],
-  );
+  const [contacts, setContacts] = useState<Contact[]>(isConnected() ? [] : demoContacts[role]);
   const [conversations, setConversations] = useState<Conversation[]>([]);
   const [selectedId, setSelectedId] = useState<string>(requestedMode === 'ai' ? 'ai-new' : '');
   const [messages, setMessages] = useState<Message[]>([]);
@@ -81,7 +78,7 @@ export function CommunicationCenter({ role, requestedMode }: CommunicationCenter
     selectedId === 'ai-new' ? 'Tutor IA' : (selectedConversation?.title ?? 'Escolha uma conversa');
 
   async function loadConversations(preferredId?: string) {
-    if (!isSupabaseConfigured) return;
+    if (!isConnected()) return;
     const loaded = await gateways().communication.conversations<Conversation[]>();
     if (!loaded.ok)
       throw new Error(failureMessage(loaded, 'Nao foi possivel carregar as conversas.'));
@@ -91,7 +88,7 @@ export function CommunicationCenter({ role, requestedMode }: CommunicationCenter
   }
 
   useEffect(() => {
-    if (!isSupabaseConfigured) return;
+    if (!isConnected()) return;
     let active = true;
     const { communication } = gateways();
     Promise.all([
@@ -136,7 +133,7 @@ export function CommunicationCenter({ role, requestedMode }: CommunicationCenter
       setMessages([]);
       return;
     }
-    if (!isSupabaseConfigured) return;
+    if (!isConnected()) return;
     let active = true;
     gateways()
       .communication.messages<Message[]>(selectedId)
@@ -171,7 +168,7 @@ export function CommunicationCenter({ role, requestedMode }: CommunicationCenter
       setSelectedId(existing.id);
       return;
     }
-    if (!isSupabaseConfigured) {
+    if (!isConnected()) {
       const conversation = {
         id: `demo-${contact.id}`,
         kind: 'direct' as const,
@@ -204,7 +201,7 @@ export function CommunicationCenter({ role, requestedMode }: CommunicationCenter
     setBusy(true);
     setError('');
     try {
-      if (!isSupabaseConfigured) {
+      if (!isConnected()) {
         const now = new Date().toISOString();
         const mine: Message = {
           id: `demo-user-${Date.now()}`,

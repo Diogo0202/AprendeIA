@@ -14,7 +14,7 @@ A área do professor transforma tentativas, tempo de estudo e dificuldades em um
 
 ## Trilha de dificuldade
 
-As tentativas são agrupadas por semana. A barra mostra `100 - taxa de acerto`: quanto menor a barra, menor a dificuldade observada. O cálculo fica em `backend/teacher_dashboard.py` e mantém no máximo 12 semanas no retorno.
+As tentativas são agrupadas por semana. A barra mostra `100 - taxa de acerto`: quanto menor a barra, menor a dificuldade observada. O cálculo fica em `backend/aprendeia/domain/teacher_dashboard.py` e mantém no máximo 12 semanas no retorno.
 
 Esse gráfico não faz diagnóstico clínico. Ele organiza sinais pedagógicos para apoiar a decisão do professor.
 

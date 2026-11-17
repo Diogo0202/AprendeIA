@@ -30,4 +30,9 @@ describe('camadas da interface', () => {
     const screens = /^\.\/(components\/|App\.tsx)/;
     expect(offenders(screens, /adapters\/http\/(apiClient|gateways)|\bfetch\(/)).toEqual([]);
   });
+
+  it('as telas usam a sessão pela porta, nunca o cliente Supabase', () => {
+    const screens = /^\.\/(components\/|App\.tsx)/;
+    expect(offenders(screens, /\bsupabase\.(auth|from)\b|\bisSupabaseConfigured\b/)).toEqual([]);
+  });
 });

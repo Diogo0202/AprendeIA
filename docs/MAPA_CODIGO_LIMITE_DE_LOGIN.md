@@ -5,8 +5,8 @@ O login passa pelo backend e bloqueia uma conta na quinta falha. A espera começ
 
 ## Estrutura
 - `frontend/src/App.tsx` — envia o formulário ao endpoint protegido e mostra o tempo de espera.
-- `backend/main.py` — coordena limite, autenticação e retorno da sessão.
-- `backend/auth_security.py` — normaliza identidade, cria hashes e valida proxy/IP.
+- `backend/aprendeia/application/services/access.py` (`LoginService`) — coordena limite, autenticação e retorno da sessão.
+- `backend/aprendeia/domain/login_protection.py` — normaliza identidade, cria hashes e valida proxy/IP.
 - `backend/test_auth_rate_limit.py` — cobre bloqueio, segredo, proxy e login correto.
 - `supabase/migrations/20260913143000_login_rate_limit.sql` — guarda e atualiza os contadores com trava de linha.
 - `supabase/migrations/20260913150000_login_rate_limit_policy.sql` — explicita que somente `service_role` usa a tabela.
@@ -16,7 +16,7 @@ O login passa pelo backend e bloqueia uma conta na quinta falha. A espera começ
 ## Fluxo principal
 1. `App.tsx` envia e-mail e senha para `POST /auth/login`.
 2. `auth_security.py` normaliza e anonimiza conta e rede.
-3. `main.py` consulta a rede, reserva uma tentativa da conta e só então autentica no Supabase.
+3. `LoginService` consulta a rede, reserva uma tentativa da conta e só então autentica no Supabase.
 4. Uma falha incrementa os contadores; a quarta retorna `429`.
 5. Um login correto limpa o contador da conta e abre a sessão no React.
 

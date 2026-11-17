@@ -104,10 +104,61 @@ export interface AdminGateway {
 }
 
 export interface Gateways {
+  session: SessionGateway;
   account: AccountGateway;
   communication: CommunicationGateway;
   privacy: PrivacyGateway;
   student: StudentGateway;
   teacher: TeacherGateway;
   admin: AdminGateway;
+}
+
+/** Linha de `profiles` como o serviço de identidade a devolve. */
+export type ProfileRecord = {
+  id: string;
+  email: string;
+  full_name: string;
+  role: string;
+  grade: string;
+  goal: string;
+  registration_status?: 'active' | 'pending_teacher';
+  requested_subject?: string | null;
+  avatar_key?: string | null;
+  featured_badge_id?: string | null;
+  accent_theme?: string | null;
+  profile_setup_complete?: boolean | null;
+  privacy_policy_version?: string | null;
+  terms_of_use_version?: string | null;
+};
+
+export type SignUpRequest = {
+  email: string;
+  password: string;
+  captchaToken?: string;
+  redirectTo: string;
+  metadata: Record<string, unknown>;
+};
+
+export type SignUpOutcome =
+  { ok: true; sessionOpened: boolean } | { ok: false; passwordRejected: boolean };
+
+export type SessionListener = (event: string, userId: string | null) => void;
+
+/** Sessão e identidade: a tela não conhece o provedor que as mantém. */
+export interface SessionGateway {
+  /** Sem serviço de identidade configurado, as telas ficam em modo demonstrativo. */
+  connected(): boolean;
+  currentUserId(): Promise<string | null>;
+  /** Devolve a função que cancela a inscrição. */
+  onChange(listener: SessionListener): () => void;
+  profile(userId: string): Promise<ProfileRecord | null>;
+  open(accessToken: string, refreshToken: string): Promise<boolean>;
+  signUp(request: SignUpRequest): Promise<SignUpOutcome>;
+  requestPasswordRecovery(
+    email: string,
+    redirectTo: string,
+    captchaToken?: string,
+  ): Promise<boolean>;
+  updatePassword(password: string): Promise<boolean>;
+  signOut(): Promise<void>;
 }

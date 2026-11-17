@@ -1,10 +1,10 @@
 import { CommunicationCenter } from '../CommunicationCenter';
+import { isConnected } from '../../application/gateways';
 import { NotificationPreferences } from '../NotificationPreferences';
 import { NavigationDock } from '../NavigationDock';
 import { LegalDocuments } from '../LegalDocuments';
 import { Leaderboard } from '../student/Leaderboard';
 import { QuestionStudio } from './QuestionStudio';
-import { supabase } from '../../adapters/supabase/client';
 import type { TrendPoint } from '../../domain/teacher';
 import { useTeacherDashboard } from './useTeacherDashboard';
 import { Header, Avatar, Difficulty } from '../layout/Chrome';
@@ -197,7 +197,7 @@ export function TeacherProfile({ onLogout }: { onLogout: () => void }) {
                   </button>
                 </form>
               </div>
-              {selectedClassId && supabase && (
+              {selectedClassId && isConnected() && (
                 <Leaderboard key={selectedClassId} teacherClassId={selectedClassId} />
               )}
               <div className="class-workbench">

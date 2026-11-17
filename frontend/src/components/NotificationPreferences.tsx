@@ -1,7 +1,6 @@
 import { FormEvent, useEffect, useId, useState } from 'react';
-import { gateways } from '../application/gateways';
+import { gateways, isConnected } from '../application/gateways';
 import { failureMessage } from '../application/result';
-import { isSupabaseConfigured } from '../adapters/supabase/client';
 
 type Preferences = {
   email_difficulty_alerts: boolean;
@@ -13,14 +12,14 @@ const defaults: Preferences = { email_difficulty_alerts: true, email_weekly_summ
 export function NotificationPreferences() {
   const headingId = useId();
   const [preferences, setPreferences] = useState<Preferences>(defaults);
-  const [loading, setLoading] = useState(isSupabaseConfigured);
+  const [loading, setLoading] = useState(isConnected());
   const [loaded, setLoaded] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
   const [message, setMessage] = useState('');
 
   useEffect(() => {
-    if (!isSupabaseConfigured) return;
+    if (!isConnected()) return;
     const controller = new AbortController();
     void (async () => {
       try {
@@ -78,7 +77,7 @@ export function NotificationPreferences() {
           próximos envios.
         </p>
       </div>
-      {!isSupabaseConfigured && (
+      {!isConnected() && (
         <p className="form-message">Conecte o Supabase para salvar suas preferências.</p>
       )}
       <form onSubmit={(event) => void save(event)}>

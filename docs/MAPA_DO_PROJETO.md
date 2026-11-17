@@ -11,7 +11,9 @@ O projeto separa a interface React, o backend em arquitetura hexagonal (domínio
 - `frontend/src/domain/` — tipos compartilhados pelas telas (`app.ts`, `learning.ts`, `teacher.ts`).
 - `frontend/src/application/` — portas que as telas usam para falar com o servidor (`ports.ts`), o resultado sem detalhes de HTTP (`result.ts`) e o registro das portas (`gateways.ts`).
 - `frontend/src/adapters/http/` — cliente HTTP autenticado e a implementação das portas (`gateways.ts`); `adapters/supabase/client.ts` mantém sessão e token público; `adapters/browser/` cuida de tema, medição e URL de retorno.
-- `frontend/src/architecture.test.ts` — falha se uma tela chamar o cliente HTTP direto ou se uma camada importar outra mais externa.
+- `frontend/src/adapters/supabase/session.ts` — porta de sessão (login aberto pelo backend, cadastro, recuperação de senha); `frontend/src/composition.ts` liga as portas aos adaptadores.
+- `frontend/src/components/**/use*.ts` — estado e ações de cada tela grande (`useAuthFlow`, `useStudentProfile`, `useTeacherDashboard`, `usePrivacyRequestPanel`); o componente só desenha.
+- `frontend/src/architecture.test.ts` — falha se uma tela chamar o cliente HTTP ou o Supabase direto, ou se uma camada importar outra mais externa.
 - `backend/main.py` — ponto de entrada; só cria o app (`main:app`).
 - `backend/aprendeia/domain/` — regras puras, sem FastAPI nem Supabase: login (`login_protection.py`), gamificação, catálogo, questões, alertas de dificuldade, painel do professor e erros de negócio (`errors.py`).
 - `backend/aprendeia/application/ports/` — contratos (Protocol) que os casos de uso exigem de banco, identidade, IA, e-mail e limites.
@@ -31,5 +33,5 @@ O projeto separa a interface React, o backend em arquitetura hexagonal (domínio
 
 ## Pontos de atenção
 - Segredos pertencem ao backend e nunca aos arquivos versionados.
-- Os painéis de professor (`TeacherProfile.tsx`) e de aluno (`StudentProfile.tsx`) ainda são componentes grandes e podem ser divididos por aba.
+- Os painéis de professor e de aluno já separam estado (hooks) de apresentação; o JSX de cada um ainda pode ser dividido por aba.
 - Mudanças locais só chegam à produção depois de commit, push e novo deploy.

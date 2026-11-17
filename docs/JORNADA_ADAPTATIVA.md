@@ -18,7 +18,7 @@ A jornada deixa de escolher apenas entre dificuldade básica, intermediária e a
 - Frágil: pelo menos duas tentativas e menos de 60% de acertos.
 - Em desenvolvimento: os demais casos, inclusive quando ainda falta evidência.
 
-As regras ficam em `backend/learning_engine.py` e têm testes próprios. Respostas da prática comum e da avaliação diagnóstica entram no mesmo cálculo, mas continuam registradas em tabelas separadas para auditoria.
+As regras ficam em `backend/aprendeia/domain/learning_engine.py` e têm testes próprios. Respostas da prática comum e da avaliação diagnóstica entram no mesmo cálculo, mas continuam registradas em tabelas separadas para auditoria.
 
 ## Recomendação
 

@@ -7,11 +7,11 @@ import { AboutPage } from './components/AboutPage';
 import { verifyPublicGuest } from './adapters/browser/tracking';
 import { apiUrl, supabase } from './adapters/supabase/client';
 import { loadLegalDocuments } from './adapters/http/legalVersions';
-import { createHttpGateways } from './adapters/http/gateways';
 import { provideGateways } from './application/gateways';
+import { createGateways } from './composition';
 
-// Raiz de composição: as telas recebem as portas já ligadas ao adaptador HTTP.
-provideGateways(createHttpGateways());
+// As telas recebem as portas já ligadas aos adaptadores.
+provideGateways(createGateways());
 void loadLegalDocuments(apiUrl);
 
 const about = window.location.pathname === '/sobre';

@@ -1,8 +1,7 @@
 import { FormEvent, useEffect, useState } from 'react';
 import FallbackAvatar, { type AvatarKey } from '../FallbackAvatar';
-import { gateways } from '../../application/gateways';
+import { gateways, isConnected } from '../../application/gateways';
 import { failureMessage } from '../../application/result';
-import { isSupabaseConfigured } from '../../adapters/supabase/client';
 import type { AccentTheme, UserProfile, Achievement } from '../../domain/app';
 import { applyAccentTheme } from '../../adapters/browser/theme';
 
@@ -58,7 +57,7 @@ export function ProfileSetup({
     setSaving(true);
     setMessage('');
     try {
-      if (isSupabaseConfigured) {
+      if (isConnected()) {
         const saved = await gateways().student.personalize({
           avatar_key: avatarKey,
           featured_badge_id: featuredBadgeId,

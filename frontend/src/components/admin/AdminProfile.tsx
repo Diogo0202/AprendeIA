@@ -7,9 +7,8 @@ import { CommunicationCenter } from '../CommunicationCenter';
 import { AdminPrivacyRequests } from '../PrivacyRequests';
 import { NavigationDock } from '../NavigationDock';
 import { LegalDocuments } from '../LegalDocuments';
-import { gateways } from '../../application/gateways';
+import { gateways, isConnected } from '../../application/gateways';
 import { failureMessage } from '../../application/result';
-import { supabase } from '../../adapters/supabase/client';
 import type { Role } from '../../domain/app';
 import { Header, Avatar } from '../layout/Chrome';
 
@@ -68,7 +67,7 @@ const demoAdminUsers: AdminUser[] = [
 
 export function AdminProfile({ onLogout }: { onLogout: () => void }) {
   const [activeTab, setActiveTab] = useState<AdminTab>('overview');
-  const [people, setPeople] = useState<AdminUser[]>(supabase ? [] : demoAdminUsers);
+  const [people, setPeople] = useState<AdminUser[]>(isConnected() ? [] : demoAdminUsers);
   const [overview, setOverview] = useState<AdminOverview | null>(null);
   const [activityUser, setActivityUser] = useState<{ id: string; name: string } | null>(null);
   const [adminSubjects, setAdminSubjects] = useState<AdminSubject[]>([]);
@@ -78,7 +77,7 @@ export function AdminProfile({ onLogout }: { onLogout: () => void }) {
   const [busy, setBusy] = useState(false);
 
   async function loadUsers() {
-    if (!supabase) return;
+    if (!isConnected()) return;
     const users = await gateways().admin.users<AdminUser[]>();
     if (users.ok) setPeople(users.data);
     else setMessage(failureMessage(users, 'Não foi possível carregar os usuários.'));
@@ -87,7 +86,7 @@ export function AdminProfile({ onLogout }: { onLogout: () => void }) {
   useEffect(() => {
     let active = true;
     async function loadAdminData() {
-      if (!supabase) return;
+      if (!isConnected()) return;
       const { admin } = gateways();
       const [requests, users, overview] = await Promise.all([
         admin.teacherRequests<TeacherRegistrationRequest[]>(),
@@ -120,7 +119,7 @@ export function AdminProfile({ onLogout }: { onLogout: () => void }) {
     const label = role === 'teacher' ? 'Professor' : 'Estudante';
     setBusy(true);
     try {
-      if (supabase) {
+      if (isConnected()) {
         const created = await gateways().admin.createUser({
           name,
           email: String(data.get('email')),
@@ -133,7 +132,7 @@ export function AdminProfile({ onLogout }: { onLogout: () => void }) {
           return;
         }
       }
-      if (supabase) await loadUsers();
+      if (isConnected()) await loadUsers();
       else
         setPeople((current) => [
           ...current,
