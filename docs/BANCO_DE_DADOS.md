@@ -18,7 +18,7 @@ O PostgreSQL do Supabase usa dois schemas:
 | Gamificação | `student_activity_days` | Dias com atividade do aluno. |
 | Professor | `classes`, `class_students`, `learning_contents`, `pedagogical_recommendations` | Turmas, materiais e orientações. |
 | Alertas | `difficulty_alerts`, `weekly_summary_runs` | Casos de dificuldade e controle do resumo semanal. |
-| Segurança | `private.login_rate_limits`, `private.api_rate_limits` | Bloqueios do login e limites por operação autenticada. |
+| Segurança | `private.login_rate_limits`, `private.api_rate_limits`, `access_audit_logs` | Bloqueios, limites e trilha técnica de acesso. |
 
 ## Relações importantes
 
@@ -58,9 +58,18 @@ As três funções de limite aceitam somente hashes no formato SHA-256 e só con
 10. `20260913153000_login_attempt_reservation.sql`
 11. `20260914183000_student_profile_personalization.sql`
 12. `20260915120000_api_security_hardening.sql`
+13. `20260918120000_learning_journey.sql`
+14. `20260920120000_access_audit_logs.sql`
+15. `20260921150000_progressive_login_lockout.sql`
+16. `20260923100000_secure_communications.sql`
+17. `20260926120000_privacy_consent_and_audit_schema.sql`
 
 ## Estado confirmado
 
-As três migrations de limite de login foram aplicadas ao projeto Supabase do AprendeIA. Um teste transacional confirmou quatro reservas válidas, bloqueio antes da quinta tentativa e tempo de espera positivo sem manter dados de teste.
+As três migrations originais de limite de login foram aplicadas ao projeto Supabase do AprendeIA. A migration progressiva adicionada em 21/09 ainda precisa ser aplicada; localmente, os testes confirmam cinco reservas, bloqueio antes da sexta chamada e cálculo crescente sem armazenar e-mail ou IP em texto puro.
 
 A migration de segurança da API foi criada e validada localmente, mas ainda precisa ser aplicada no Supabase. Ela revoga leitura direta do banco de questões e escrita direta em tentativas e progresso, além de criar o contador das operações autenticadas.
+
+A migration de auditoria mantém os eventos imutáveis para a aplicação: `anon` e `authenticated` não possuem acesso. A migration de comunicação remove `delete` do `service_role`; a migration de privacidade reduz a retenção dos logs para até 7 dias e agenda a limpeza horária via Supabase Cron.
+
+A migration de comunicação cria `conversations`, `conversation_members` e `messages`. Ela ainda precisa ser aplicada no Supabase; criação de conversa, leitura de mensagens e tutor de IA não devem ser considerados prontos em produção antes dessa etapa.

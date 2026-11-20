@@ -1,0 +1,73 @@
+.cookie-banner,
+.cookie-footer {
+  padding: 1rem clamp(1rem, 4vw, 3rem);
+  background: var(--paper, #fff);
+  color: var(--ink, #172235);
+  border-block: 2px solid var(--ink-soft, #4f5d70);
+}
+.cookie-actions,
+.cookie-footer {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.75rem;
+  align-items: center;
+}
+.cookie-choice {
+  color: var(--ink, #172235);
+  background: var(--paper, #fff);
+  border: 2px solid var(--ink-soft, #4f5d70);
+  border-radius: 0.5rem;
+  min-height: 44px;
+  padding: 0.6rem 0.9rem;
+  font: inherit;
+  cursor: pointer;
+}
+.cookie-dialog {
+  color: var(--ink, #172235);
+  background: var(--paper, #fff);
+  width: min(42rem, calc(100% - 2rem));
+  max-height: 85dvh;
+  overflow: auto;
+  border: 2px solid var(--ink-soft, #4f5d70);
+  padding: 1.25rem;
+}
+.cookie-dialog::backdrop {
+  background: rgb(0 0 0/0.6);
+}
+.cookie-dialog label {
+  display: flex;
+  gap: 0.7rem;
+  align-items: center;
+  min-height: 44px;
+  margin-block: 0.7rem;
+}
+.cookie-dialog input {
+  width: 1.25rem;
+  height: 1.25rem;
+}
+.cookie-dialog dt {
+  font-weight: 700;
+  margin-top: 1rem;
+}
+.cookie-dialog dd {
+  margin: 0.5rem 0 1rem;
+}
+.cookie-choice:focus-visible,
+.cookie-dialog a:focus-visible {
+  outline: 3px solid var(--ink, #172235);
+  outline-offset: 3px;
+}
+.about-page {
+  max-width: 64rem;
+  margin: auto;
+  padding: clamp(1rem, 4vw, 3rem);
+}
+.about-page p {
+  max-width: 70ch;
+  line-height: 1.6;
+}
+.about-page nav {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 1rem;
+}

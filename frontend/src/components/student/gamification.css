@@ -1,0 +1,196 @@
+.gf-surface {
+  color: #172b46;
+  background: #fff;
+  border: 1px solid #cad5e2;
+  border-radius: 1rem;
+  padding: clamp(1rem, 3vw, 1.75rem);
+  margin-block: 1rem;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+.gf-surface h2 {
+  margin-top: 0;
+}
+.gf-surface button,
+.gf-surface input,
+.gf-surface select {
+  font: inherit;
+}
+.gf-surface button,
+.gf-surface select,
+.gf-surface input:not([type='checkbox']) {
+  min-height: 44px;
+  border: 1px solid #62748b;
+  border-radius: 0.5rem;
+  padding: 0.55rem 0.8rem;
+  background: #fff;
+  color: #172b46;
+  max-width: 100%;
+}
+.gf-surface button {
+  cursor: pointer;
+}
+.gf-surface button:disabled {
+  opacity: 0.55;
+  cursor: default;
+}
+.gf-surface :focus-visible {
+  outline: 3px solid #135fc2;
+  outline-offset: 3px;
+}
+.gf-tabs {
+  display: flex;
+  gap: 0.5rem;
+  margin-block: 1rem;
+}
+.gf-tabs [aria-selected='true'] {
+  color: #fff;
+  background: #234d89;
+  border-color: #234d89;
+}
+.gf-notice,
+.gf-own {
+  padding: 1rem;
+  background: #edf4ff;
+  border-radius: 0.6rem;
+}
+.gf-field {
+  display: grid;
+  gap: 0.4rem;
+  margin-block: 0.6rem;
+}
+.gf-period {
+  color: #435571;
+}
+.gf-podium {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.75rem;
+  margin-block: 1rem;
+}
+.gf-podium-card {
+  flex: 1 1 140px;
+  display: grid;
+  gap: 0.4rem;
+  justify-items: center;
+  padding: 1rem;
+  border: 1px solid #a88a32;
+  border-radius: 0.75rem;
+  background: #fff9e8;
+  text-align: center;
+}
+.gf-podium > p {
+  flex-basis: 100%;
+  margin: 0;
+}
+.gf-avatar,
+.gf-achievement-icon {
+  font-size: 1.8rem;
+}
+.gf-tag {
+  display: inline-block;
+  font-size: 0.85rem;
+  font-weight: 600;
+}
+.gf-table-scroll {
+  overflow-x: auto;
+}
+.gf-surface table {
+  width: 100%;
+  border-collapse: collapse;
+}
+.gf-surface caption {
+  text-align: left;
+  font-weight: 600;
+  margin-bottom: 0.5rem;
+}
+.gf-surface th,
+.gf-surface td {
+  padding: 0.7rem;
+  text-align: left;
+  border-bottom: 1px solid #cad5e2;
+}
+.gf-surface tr[aria-current='true'] {
+  background: #edf4ff;
+  font-weight: 600;
+}
+.gf-own {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.75rem;
+  margin-block: 1rem;
+}
+.gf-pagination {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  margin-block: 1rem;
+}
+.gf-preferences fieldset {
+  display: grid;
+  gap: 0.75rem;
+  border: 1px solid #cad5e2;
+  border-radius: 0.6rem;
+  min-width: 0;
+}
+.gf-preferences p {
+  margin: 0;
+}
+.gf-check {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  min-height: 44px;
+}
+.gf-check input {
+  width: 1.25rem;
+  height: 1.25rem;
+  flex-shrink: 0;
+}
+.gf-totals {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 1.25rem;
+}
+.gf-totals dd {
+  margin: 0.25rem 0;
+  font-weight: 700;
+  font-size: 1.25rem;
+}
+.gf-achievements {
+  list-style: none;
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 210px), 1fr));
+  gap: 1rem;
+  padding: 0;
+}
+.gf-achievement {
+  padding: 1rem;
+  border: 1px solid #bac6d6;
+  border-radius: 0.75rem;
+  background: #f6f8fc;
+}
+.gf-unlocked {
+  border-color: #52816a;
+  background: #f0faf4;
+}
+.gf-achievement h3 {
+  margin-block: 0.6rem;
+}
+.gf-achievement progress {
+  width: 100%;
+  accent-color: #234d89;
+  height: 0.75rem;
+}
+@media (max-width: 480px) {
+  .gf-surface th,
+  .gf-surface td {
+    padding: 0.5rem 0.3rem;
+  }
+  .gf-podium-card {
+    flex-basis: 100%;
+  }
+}

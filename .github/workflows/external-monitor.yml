@@ -1,0 +1,38 @@
+name: Monitor externo RF32
+
+on:
+  schedule:
+    - cron: '*/5 * * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  issues: write
+
+# A chave fixa serializa execuções manuais e agendadas no mesmo repositório.
+concurrency:
+  group: aprendeia-rf32-external-monitor
+  cancel-in-progress: false
+
+jobs:
+  monitor:
+    if: vars.ENABLE_EXTERNAL_MONITOR == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 3
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Testar monitor sem rede externa
+        run: node --test scripts/monitor-production.test.mjs
+      - name: Conferir serviços e reconciliar alertas
+        env:
+          MONITOR_FRONTEND_URL: ${{ vars.MONITOR_FRONTEND_URL }}
+          MONITOR_API_URL: ${{ vars.MONITOR_API_URL }}
+          MONITOR_MAX_LATENCY_MS: ${{ vars.MONITOR_MAX_LATENCY_MS }}
+          GITHUB_TOKEN: ${{ github.token }}
+        run: node scripts/monitor-production.mjs

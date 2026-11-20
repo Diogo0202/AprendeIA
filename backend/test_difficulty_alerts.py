@@ -20,8 +20,9 @@ class DifficultyRuleTests(unittest.TestCase):
     def test_does_not_alert_at_sixty_percent_or_above(self):
         self.assertFalse(is_high_difficulty(60, 5))
 
-    def test_immediate_email_explains_the_subject_topic_and_result(self):
+    def test_immediate_email_contains_only_notice_and_panel_link(self):
         subject, body = build_immediate_email(
+            panel_url="https://aprendeia.example/",
             teacher_name="Carla",
             student_name="João",
             subject_name="Matemática",
@@ -30,13 +31,13 @@ class DifficultyRuleTests(unittest.TestCase):
             attempts=5,
         )
 
-        self.assertIn("Matemática", subject)
-        self.assertIn("João", body)
-        self.assertIn("Frações", body)
-        self.assertIn("40%", body)
+        for private in ("Matemática", "Carla", "João", "Frações", "40%", "5 tentativas"):
+            self.assertNotIn(private, subject + body)
+        self.assertIn("https://aprendeia.example/", body)
 
-    def test_weekly_email_groups_alerts_without_exposing_other_subjects(self):
+    def test_weekly_email_never_renders_student_data(self):
         subject, body = build_weekly_email(
+            panel_url="https://aprendeia.example/",
             teacher_name="Carla",
             subject_name="Matemática",
             alerts=[
@@ -45,10 +46,14 @@ class DifficultyRuleTests(unittest.TestCase):
             ],
         )
 
-        self.assertIn("Matemática", subject)
-        self.assertIn("João", body)
-        self.assertIn("Lia", body)
-        self.assertNotIn("Português", body)
+        for private in ("Matemática", "Carla", "João", "Lia", "Frações", "Equações", "40%", "50%"):
+            self.assertNotIn(private, subject + body)
+        self.assertIn("https://aprendeia.example/", body)
+
+    def test_panel_link_rejects_tokens_credentials_and_header_injection(self):
+        for url in ("http://example.test", "https://user:pass@example.test", "https://example.test?token=secret", "https://example.test/#secret", "https://example.test/\nInjected"):
+            with self.subTest(url=url), self.assertRaises(ValueError):
+                build_weekly_email(panel_url=url)
 
     def test_cron_secret_requires_an_exact_non_empty_match(self):
         self.assertTrue(is_valid_cron_secret("secret-123", "secret-123"))

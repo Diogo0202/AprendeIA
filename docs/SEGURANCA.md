@@ -2,13 +2,13 @@
 
 ## Regras de acesso
 
-| Ação | Aluno | Professor | Administração |
-| --- | --- | --- | --- |
-| Ver o próprio progresso | Sim | Não | Não |
-| Ver dados pedagógicos de alunos | Não | Apenas da própria disciplina | Não |
-| Alterar progresso ou dificuldade de aluno | Apenas pelas próprias atividades | Não | Não |
-| Organizar turmas | Não | Apenas as próprias | Não |
-| Criar contas e aprovar professor | Não | Não | Sim |
+| Ação                                      | Aluno                            | Professor                    | Administração |
+| ----------------------------------------- | -------------------------------- | ---------------------------- | ------------- |
+| Ver o próprio progresso                   | Sim                              | Não                          | Não           |
+| Ver dados pedagógicos de alunos           | Não                              | Apenas da própria disciplina | Não           |
+| Alterar progresso ou dificuldade de aluno | Apenas pelas próprias atividades | Não                          | Não           |
+| Organizar turmas                          | Não                              | Apenas as próprias           | Não           |
+| Criar contas e aprovar professor          | Não                              | Não                          | Sim           |
 
 Essas regras aparecem no FastAPI e nas políticas RLS. Conhecer um ID não é suficiente para abrir um recurso de outra pessoa.
 
@@ -31,10 +31,19 @@ Essas regras aparecem no FastAPI e nas políticas RLS. Conhecer um ID não é su
 - Tentativas e progresso são gravados somente pelo backend, evitando pontos ou conclusões forjadas pelo navegador.
 - Operações caras e gravações importantes usam limite atômico por usuário no PostgreSQL.
 - API e Nginx enviam CSP, `nosniff`, proteção contra iframe, política de permissões e HSTS.
+- Funcionalidades protegidas geram auditoria com usuário, ação, resultado e `request_id`.
+- Auditoria não grava token, senha, payload, query string ou IP puro; a rede usa HMAC.
+- Somente a administração consulta os eventos, e os hashes internos nunca saem da API.
 
 ## Senhas
 
 O sistema não criptografa nem grava senhas na tabela de perfis. O Supabase Auth recebe a senha por HTTPS e mantém o hash apropriado no serviço de autenticação. A aplicação guarda somente tokens de sessão no cliente Supabase.
+
+Cadastro e redefinição exigem de 6 a 128 caracteres, com pelo menos uma letra maiúscula, uma minúscula e um número; a rota administrativa aplica a mesma política. O cadastro público depende ainda da configuração compatível no Supabase Auth. Recomenda-se ativar a verificação contra senhas vazadas quando disponível e evitar reutilização.
+
+## Recuperação e confirmação de e-mail
+
+A recuperação usa Supabase Auth, resposta neutra para evitar enumeração de contas e encerramento da sessão depois da troca. O cadastro direciona a confirmação de e-mail para a origem do frontend. Confirmação obrigatória, URL do site, modelos de e-mail e lista de redirecionamento precisam ser conferidos no painel Supabase antes de produção.
 
 ## Segredos necessários
 
@@ -43,8 +52,19 @@ O sistema não criptografa nem grava senhas na tabela de perfis. O Supabase Auth
 - `OPENAI_API_KEY`
 - `SMTP_PASSWORD`
 - `WEEKLY_SUMMARY_CRON_SECRET`
+- `TURNSTILE_SECRET_KEY` (backend, lida em `backend/captcha.py`)
 
 Nenhum desses valores deve entrar no frontend, README, migration, log ou commit.
+
+A chave pública do Turnstile não é segredo: o frontend a lê de `VITE_TURNSTILE_SITE_KEY`. Sem `VITE_TURNSTILE_SITE_KEY`, o widget não aparece.
+
+Sem `TURNSTILE_SECRET_KEY`, o comportamento depende do ambiente:
+- **Local, staging e outros ambientes:** o backend aceita o login sem desafio.
+- **Produção:** o Railway com `RAILWAY_ENVIRONMENT_NAME=production`, ou qualquer host com `TURNSTILE_REQUIRED=true`. O login responde `503` antes de consultar o Supabase, e `/health/ready` responde `503` para o monitor externo acusar a falha.
+
+Configure a chave no Railway **antes** do deploy dessa versão. Sem ela, ninguém entra.
+
+O cadastro e a recuperação de senha chamam o Supabase Auth direto do navegador, então o desafio deles é validado pelo próprio Supabase. Em Authentication → Bot and Abuse Protection, ative o CAPTCHA com provedor Turnstile e a mesma chave secreta. Sem isso, o token enviado pelo formulário não é conferido nesses dois fluxos. Nomes como `CLARA_SITE_KEY` ou `CLARA_SECRET` não são lidos pela aplicação.
 
 ## Limite de login
 
@@ -54,15 +74,24 @@ O contador da conta usa o e-mail normalizado e o contador da rede usa o IP norma
 
 Geração de questões, recomendações pedagógicas, respostas, personalização, conteúdo, turmas e operações administrativas reservam uma chamada em `private.api_rate_limits` antes de continuar. O incremento usa trava de linha, funciona com mais de uma instância no Railway e falha fechado se o contador estiver indisponível.
 
+## Comunicação e prompt injection
+
+Mensagens diretas exigem participação na conversa e nunca entram no contexto da IA. A criação da conversa repete no PostgreSQL a matriz de cargos e o vínculo pedagógico já conferidos pelo FastAPI. O tutor individual normaliza a entrada, recusa tentativas explícitas de substituir instruções, sanitiza contexto indireto, limita o histórico e usa saída estruturada sem armazenamento no provedor.
+
+Essa defesa reduz o risco, mas não torna a saída do modelo confiável para executar comandos. O frontend trata respostas somente como texto e nenhuma ferramenta, consulta ao banco ou ação administrativa é disponibilizada ao modelo.
+
 ## Riscos e pendências conhecidos
 
 - A proteção contra senhas presentes em vazamentos está desativada no Supabase e deve ser ligada no painel quando o plano permitir.
-- CAPTCHA ainda não foi configurado para cadastro, login e recuperação de senha.
+- Confirmar no painel Supabase: confirmação de e-mail ligada, política de senha compatível, proteção contra senhas vazadas se disponível e rate limits para envio de e-mail, verificação e tokens. O limite local do backend não substitui os limites nativos do Auth.
 - Como o navegador precisa da chave publicável, um cliente avançado ainda pode chamar o Supabase Auth diretamente; os limites nativos do Supabase continuam sendo a proteção desse caminho. Um hook de verificação de senha seria o ponto central ideal quando disponível.
 - O projeto precisa de testes E2E com contas reais de aluno, professor e administração antes de receber dados reais.
 - Logs e alertas operacionais ainda precisam de uma ferramenta de monitoramento em produção.
+- A migration `20260926120000_privacy_consent_and_audit_schema.sql` agenda a limpeza horária dos logs e aceites detalhados com prazo máximo de 7 dias; após aplicar, confirmar o job `aprendeia-purge-expired-access-logs` no Cron do Supabase.
+- A migration `20260923100000_secure_communications.sql` ainda precisa ser aplicada e validada em homologação antes de liberar mensagens reais.
 - A migration `20260915120000_api_security_hardening.sql` precisa ser aplicada no Supabase e o frontend precisa de novo deploy para os cabeçalhos entrarem em produção.
 - A varredura exploratória do Strix não foi executada porque Strix e Docker não estão disponíveis no PATH desta máquina.
+- Todas as pendências de RFs em 50% foram resolvidas: RF-04 (senha), RF-05 (Turnstile), RF-07 (privacidade), RF-22 (alertas e-mail), RF-25 (tutor IA), RF-29 (Clarity), RF-31 (CI/CD).
 
 ## Verificações realizadas
 

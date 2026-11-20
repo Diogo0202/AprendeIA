@@ -44,7 +44,17 @@ Antes do envio real, autentique o domínio do remetente com SPF, DKIM e DMARC. C
 
 ## Resumo semanal
 
-Agende uma chamada semanal para:
+O agendamento está versionado em `.github/workflows/weekly-summary.yml`. Ele roda toda segunda-feira às 08:00 de Brasília (11:00 UTC) e também pode ser disparado manualmente em **Actions → Resumo semanal RF22 → Run workflow**. Para ativar:
+
+1. Fazer merge na branch padrão, porque o GitHub só agenda workflows que estão nela.
+2. Em **Settings → Secrets and variables → Actions**:
+   - **Secret** `WEEKLY_SUMMARY_CRON_SECRET`, com o mesmo valor configurado no Railway;
+   - **Variable** `WEEKLY_SUMMARY_API_URL`, com a URL base da API (sem a rota). Se ausente, o workflow usa `MONITOR_API_URL`.
+3. Rodar uma vez manualmente e conferir a caixa de entrada de um professor de teste.
+
+O script `scripts/trigger-weekly-summary.mjs` só aceita HTTPS e envia o segredo apenas no cabeçalho. Ele repete uma vez em 502 ou 504 e escreve no resumo do job somente totais: notificados, que desligaram o resumo e falhas. O job fica vermelho quando há falha de entrega, credencial recusada ou configuração ausente; o GitHub avisa por e-mail quem administra o repositório. O histórico do Actions serve de comprovante do agendamento, não da entrega na caixa de entrada.
+
+A chamada é equivalente a:
 
 ```text
 POST https://SUA-API.up.railway.app/internal/weekly-difficulty-summary

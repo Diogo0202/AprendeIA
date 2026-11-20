@@ -42,7 +42,7 @@ Supabase Auth + PostgreSQL + RLS
 ## Funcionalidades implementadas
 
 - Login e cadastro com Supabase Auth.
-- Bloqueio após quatro senhas erradas por conta em quinze minutos.
+- Bloqueio na quinta senha errada: começa em cinco minutos e dobra a cada nova rodada de cinco falhas, até o limite de 24 horas.
 - Perfil estudantil com matérias, progresso e gamificação.
 - Banco de questões por matéria e dificuldade.
 - Correção, explicação e ajuste de nível a partir dos acertos.
@@ -64,5 +64,5 @@ Supabase Auth + PostgreSQL + RLS
 
 - A qualidade das questões geradas precisa de revisão pedagógica antes do uso real.
 - A interface está concentrada em `frontend/src/App.tsx`; separar páginas e componentes facilitará o crescimento.
-- Recuperação de senha e CAPTCHA ainda precisam ser configurados.
+- A recuperação de senha existe no frontend, mas depende de SMTP, URLs de redirecionamento e configuração Auth no Supabase; CAPTCHA também depende de configuração.
 - O bloqueio personalizado do login vale para o endpoint do backend; o Supabase também mantém os próprios limites na API de autenticação.

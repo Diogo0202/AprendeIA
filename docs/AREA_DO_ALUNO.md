@@ -9,6 +9,9 @@
 - Pontos, nível, sequência de estudo e insígnias.
 - Área de prática com questões ajustadas ao desempenho.
 - Explicação da resposta depois de cada tentativa.
+- Avaliação diagnóstica no primeiro acesso.
+- Recomendações por tópico dominado, em desenvolvimento ou frágil.
+- Leitura e conclusão das aulas reais cadastradas no banco.
 
 ## Fluxo da prática
 
@@ -19,6 +22,12 @@
 5. O aluno recebe o resultado, a explicação e o próximo nível.
 
 O gabarito e a explicação ficam fora da resposta inicial. Eles só aparecem depois que a tentativa foi registrada.
+
+## Avaliação e aulas
+
+O primeiro acesso usa `GET /student/diagnostic` para montar uma avaliação curta com questões publicadas de várias matérias. As respostas são gravadas por sessão e o gabarito não é enviado durante a avaliação. Quando todas as questões são concluídas, o motor agrupa acertos por tópico e monta o primeiro mapa de aprendizagem.
+
+O catálogo vem de `GET /student/subjects`. A resposta já junta `subjects`, `modules`, `lessons` e `lesson_progress`, então o frontend não mantém uma lista própria de matérias. O aluno abre uma aula em `GET /student/lessons/{lesson_id}` e salva o avanço somente no próprio perfil.
 
 ## Gamificação
 
@@ -46,8 +55,12 @@ O aluno consulta dados usando o ID do token, não um ID digitado na URL. Ele nã
 
 ## Arquivos principais
 
-- `frontend/src/App.tsx` — `StudentProfile` e `PracticeProfile`.
+- `frontend/src/App.tsx` — coordenação de sessão, perfil e prática.
+- `frontend/src/components/student` — diagnóstico e leitura de aula.
+- `frontend/src/types/learning.ts` — contratos usados pelo catálogo e recomendações.
 - `backend/main.py` — rotas `/student/*` e rotas de prática.
+- `backend/learning_engine.py` — classificação e recomendações por tópico.
 - `backend/gamification.py` — cálculo de pontos e conquistas.
 - `supabase/migrations/20260908170000_student_gamification.sql` — registro dos dias ativos.
 - `supabase/migrations/20260914183000_student_profile_personalization.sql` — preferências visuais protegidas.
+- `supabase/migrations/20260918120000_learning_journey.sql` — diagnóstico, conteúdo das aulas e revisão de questões.

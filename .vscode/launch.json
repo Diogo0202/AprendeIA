@@ -1,6 +1,7 @@
 {
   "version": "0.2.0",
   "configurations": [
+
     {
       // F5 inicia a API e permite parar nos breakpoints do código Python.
       "name": "AprendeIA: depurar backend",

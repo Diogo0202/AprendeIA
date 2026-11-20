@@ -1,0 +1,36 @@
+name: Resumo semanal RF22
+
+on:
+  schedule:
+    # Segunda-feira, 08:00 em Brasília (11:00 UTC).
+    - cron: '0 11 * * 1'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+# Uma execução por vez; o backend faz claim por professor/disciplina/período.
+concurrency:
+  group: aprendeia-rf22-weekly-summary
+  cancel-in-progress: false
+
+jobs:
+  summary:
+    if: vars.ENABLE_WEEKLY_SUMMARY == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Testar disparo sem rede externa
+        run: node --test scripts/trigger-weekly-summary.test.mjs
+      - name: Disparar resumo semanal
+        env:
+          WEEKLY_SUMMARY_API_URL: ${{ vars.WEEKLY_SUMMARY_API_URL }}
+          WEEKLY_SUMMARY_CRON_SECRET: ${{ secrets.WEEKLY_SUMMARY_CRON_SECRET }}
+        run: node scripts/trigger-weekly-summary.mjs
