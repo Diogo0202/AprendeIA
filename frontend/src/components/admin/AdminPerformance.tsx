@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { gateways } from '../../application/gateways';
 import { type Performance, type TeacherRow } from '../../domain/admin';
 import { useAdminData } from './useAdminData';
 import { Metric, SampleBadge, Trend, percent } from './PerformanceWidgets';
@@ -6,13 +7,16 @@ import { Metric, SampleBadge, Trend, percent } from './PerformanceWidgets';
 /** Desempenho agregado por turma e professor; nenhum dado individual de aluno. */
 export function AdminPerformance() {
   const [teacherId, setTeacherId] = useState('');
-  const path = `/admin/performance${teacherId ? `?teacher_id=${encodeURIComponent(teacherId)}` : ''}`;
-  const { data, error, loading } = useAdminData<Performance>(path, {
-    min_group_size: 3,
-    classes: [],
-    teachers: [],
-  });
-  const teacherOptions = useAdminData<TeacherRow[]>('/admin/teachers', []).data;
+  const { data, error, loading } = useAdminData<Performance>(
+    `performance:${teacherId}`,
+    (signal) => gateways().admin.performance<Performance>(teacherId || undefined, signal),
+    { min_group_size: 3, classes: [], teachers: [] },
+  );
+  const teacherOptions = useAdminData<TeacherRow[]>(
+    'teachers',
+    (signal) => gateways().admin.teachers<TeacherRow[]>(signal),
+    [],
+  ).data;
   const visible = data.classes.filter((item) => !item.small_sample);
   const totalAttempts = visible.reduce((sum, item) => sum + (item.attempts ?? 0), 0);
   const weighted = visible.reduce(

@@ -16,7 +16,7 @@ from aprendeia.adapters.inbound.http.schemas import QuestionRequest, StudentProf
 from aprendeia.adapters.inbound.http.support import http_headers
 from aprendeia.adapters.outbound.supabase.client import database
 from aprendeia.adapters.outbound.supabase.security import enforce_api_rate_limit
-from aprendeia.bootstrap import registered_routes
+from aprendeia.bootstrap import create_app, registered_routes
 from aprendeia.domain.questions import hide_question_solution
 from aprendeia.domain.text import sanitize_prompt_value
 from main import app
@@ -67,12 +67,23 @@ class SecurityBoundaryTests(unittest.TestCase):
 
         self.assertEqual(status_of(error.exception), 403)
 
+    def test_invalid_subject_filter_is_a_client_error(self):
+        """Um ?subject= inválido vira 400, não 500."""
+        from aprendeia.adapters.inbound.http.routers.learning import subject_filter
+        from aprendeia.domain.errors import InvalidInput
+
+        for value in ("", "<b>", "x" * 61):
+            with self.assertRaises(InvalidInput):
+                subject_filter(value)
+        self.assertEqual(subject_filter(" Matemática "), "Matemática")
+
     def test_public_api_documentation_is_disabled(self):
         """A documentação não deve virar uma porta pública do backend."""
-        public_paths = {route.path for route in registered_routes()}
+        app = create_app()
 
-        self.assertNotIn("/docs", public_paths)
-        self.assertNotIn("/openapi.json", public_paths)
+        self.assertIsNone(app.docs_url)
+        self.assertIsNone(app.redoc_url)
+        self.assertIsNone(app.openapi_url)
 
     def test_api_responses_receive_security_headers(self):
         """Até uma resposta de erro deve impedir cache, iframe e interpretação solta."""

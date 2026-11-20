@@ -10,6 +10,7 @@ export async function apiFetch(path: string, init: RequestInit = {}) {
 }
 /** Lê a mensagem segura do backend sem espalhar try/catch pelos componentes. */
 export async function apiError(response: Response, fallback: string) {
-  const payload = (await response.json().catch(() => ({}))) as { detail?: string };
-  return payload.detail || fallback;
+  // 422 traz uma lista e o 403 de conta expirada traz um objeto: só texto chega à tela.
+  const payload = (await response.json().catch(() => ({}))) as { detail?: unknown };
+  return typeof payload.detail === 'string' && payload.detail ? payload.detail : fallback;
 }

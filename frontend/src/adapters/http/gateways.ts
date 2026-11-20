@@ -40,9 +40,28 @@ const send = <T>(method: string, path: string, payload?: object) =>
 const submit = (method: string, path: string, payload?: object, signal?: AbortSignal) =>
   call<void>('none', path, write(method, payload, signal));
 
+/**
+ * Monta um caminho codificando cada valor interpolado como um segmento:
+ * um identificador com `/`, `?` ou `..` nunca muda o endpoint chamado.
+ */
+export function path(strings: TemplateStringsArray, ...segments: string[]): string {
+  return strings.reduce(
+    (built, literal, index) =>
+      built + literal + (index < segments.length ? encodeURIComponent(segments[index]) : ''),
+    '',
+  );
+}
+
+/** Parâmetros de consulta já codificados; valores vazios ficam de fora. */
+function query(values: Record<string, string | undefined>): string {
+  const params = new URLSearchParams();
+  for (const [key, value] of Object.entries(values)) if (value) params.set(key, value);
+  const encoded = params.toString();
+  return encoded ? `?${encoded}` : '';
+}
+
 type LoginSessionPayload = { access_token?: string; refresh_token?: string };
 
-const id = encodeURIComponent;
 const DEFAULT_RETRY_SECONDS = 300;
 
 /** O login é público: vai sem token e devolve o status para a tela explicar o bloqueio. */
@@ -79,44 +98,50 @@ export function createHttpGateways(): Omit<Gateways, 'session'> {
       contacts: () => read('/communications/contacts'),
       conversations: () => read('/communications/conversations'),
       messages: (conversationId) =>
-        read(`/communications/conversations/${conversationId}/messages`),
+        read(path`/communications/conversations/${conversationId}/messages`),
       startConversation: (participantId) =>
         send('POST', '/communications/conversations', { participant_id: participantId }),
       sendMessage: (conversationId, body) =>
-        send('POST', `/communications/conversations/${conversationId}/messages`, { body }),
+        send('POST', path`/communications/conversations/${conversationId}/messages`, { body }),
       askTutor: (body, conversationId) =>
         send('POST', '/communications/ai/messages', { body, conversation_id: conversationId }),
     },
     privacy: {
       requests: (scope: PrivacyRequestScope, signal) =>
         call('json', scope === 'all' ? '/admin/privacy-requests' : '/privacy/requests', { signal }),
-      submit: (path, body) => submit('POST', path, body),
-      exportData: (requestId) => call<Blob>('blob', `/privacy/requests/${id(requestId)}/export`),
+      createRequest: (request) => submit('POST', '/privacy/requests', request),
+      cancelRequest: (requestId) => submit('POST', path`/privacy/requests/${requestId}/cancel`),
+      resolveRequest: (requestId, decision) =>
+        submit('POST', path`/admin/privacy-requests/${requestId}/resolve`, decision),
+      exportData: (requestId) => call<Blob>('blob', path`/privacy/requests/${requestId}/export`),
     },
     student: {
       subjects: () => read('/student/subjects'),
       recommendations: () => read('/student/recommendations'),
       diagnostic: () => read('/student/diagnostic'),
       answerDiagnostic: (questionId, selectedIndex) =>
-        submit('POST', `/student/diagnostic/${questionId}/answer`, {
+        submit('POST', path`/student/diagnostic/${questionId}/answer`, {
           selected_index: selectedIndex,
           response_time_seconds: 0,
         }),
       completeDiagnostic: () => send('POST', '/student/diagnostic/complete'),
       gamification: (signal) => read('/student/gamification', signal),
-      lesson: (lessonId) => read(`/student/lessons/${lessonId}`),
+      lesson: (lessonId) => read(path`/student/lessons/${lessonId}`),
       completeLesson: (lessonId, timeSeconds) =>
-        submit('PUT', `/student/lessons/${lessonId}/progress`, {
+        submit('PUT', path`/student/lessons/${lessonId}/progress`, {
           completed: true,
           time_seconds: timeSeconds,
         }),
       confirmExercise: (lessonId, questionId) =>
-        submit('POST', `/student/lessons/${lessonId}/required-exercises/${questionId}/complete`),
-      nextQuestion: (subject) => read(`/question-bank/next?subject=${id(subject)}`),
+        submit(
+          'POST',
+          path`/student/lessons/${lessonId}/required-exercises/${questionId}/complete`,
+        ),
+      nextQuestion: (subject) => read(`/question-bank/next${query({ subject })}`),
       answerQuestion: (questionId, answer: Answer) =>
-        send('POST', `/question-bank/${questionId}/answer`, answer),
+        send('POST', path`/question-bank/${questionId}/answer`, answer),
       personalize: (payload) => submit('PUT', '/student/profile-personalization', payload),
-      leaderboard: (query, signal) => call('json', `/student/leaderboard?${query}`, { signal }),
+      leaderboard: (search, signal) => call('json', `/student/leaderboard?${search}`, { signal }),
       saveLeaderboardPreferences: (preferences, signal) =>
         submit('PUT', '/student/leaderboard-preferences', preferences, signal),
     },
@@ -125,28 +150,28 @@ export function createHttpGateways(): Omit<Gateways, 'session'> {
       classes: () => read('/teacher/classes'),
       difficultyAlerts: () => read('/teacher/difficulty-alerts'),
       contents: () => read('/teacher/contents'),
-      classDetail: (classId) => read(`/teacher/classes/${classId}`),
+      classDetail: (classId) => read(path`/teacher/classes/${classId}`),
       createClass: (draft) => send('POST', '/teacher/classes', draft),
       addStudent: (classId, studentEmail) =>
-        submit('POST', `/teacher/classes/${classId}/students`, { student_email: studentEmail }),
+        submit('POST', path`/teacher/classes/${classId}/students`, { student_email: studentEmail }),
       removeStudent: (classId, studentId) =>
-        submit('DELETE', `/teacher/classes/${classId}/students/${studentId}`),
+        submit('DELETE', path`/teacher/classes/${classId}/students/${studentId}`),
       exportReport: (classId, studentId) =>
         call<Blob>(
           'blob',
-          `/teacher/reports/export?class_id=${id(classId)}${studentId ? `&student_id=${id(studentId)}` : ''}`,
+          `/teacher/reports/export${query({ class_id: classId, student_id: studentId })}`,
         ),
       createContent: (draft) => send('POST', '/teacher/contents', draft),
       importContents: (format, content) =>
         send('POST', '/teacher/contents/import', { format, content }),
       recommend: (classId, studentId) =>
         send('POST', '/teacher/recommendations', { class_id: classId, student_id: studentId }),
-      classLeaderboard: (classId, query, signal) =>
-        call('json', `/teacher/classes/${id(classId)}/leaderboard?${query}`, { signal }),
+      classLeaderboard: (classId, search, signal) =>
+        call('json', `${path`/teacher/classes/${classId}/leaderboard`}?${search}`, { signal }),
       questions: () => read('/teacher/questions'),
       generateQuestion: (parameters) => send('POST', '/question-bank/generate', parameters),
       reviewQuestion: (questionId, review) =>
-        send('PATCH', `/teacher/questions/${questionId}`, review),
+        send('PATCH', path`/teacher/questions/${questionId}`, review),
       notificationPreferences: (signal) =>
         call('json', '/teacher/notification-preferences', { signal }),
       saveNotificationPreferences: (preferences) =>
@@ -157,26 +182,29 @@ export function createHttpGateways(): Omit<Gateways, 'session'> {
       users: () => read('/admin/users'),
       createUser: (account) => submit('POST', '/admin/users', account),
       deleteUser: (userId, confirmation, reason) =>
-        submit('POST', `/admin/users/${id(userId)}/delete`, { confirmation, reason }),
+        submit('POST', path`/admin/users/${userId}/delete`, { confirmation, reason }),
       teacherRequests: () => read('/admin/teacher-requests'),
       approveTeacher: (userId, subject) =>
-        submit('POST', `/admin/teacher-requests/${userId}/approve`, { subject }),
+        submit('POST', path`/admin/teacher-requests/${userId}/approve`, { subject }),
       subjects: () => read('/admin/subjects'),
       createSubject: (subject) => submit('POST', '/admin/subjects', subject),
       createModule: (subjectId, module) =>
-        submit('POST', `/admin/subjects/${subjectId}/modules`, module),
+        submit('POST', path`/admin/subjects/${subjectId}/modules`, module),
       createLesson: (moduleId, lesson) =>
-        submit('POST', `/admin/modules/${moduleId}/lessons`, lesson),
-      mandatoryExercises: (lessonId) => read(`/admin/lessons/${lessonId}/mandatory-exercises`),
+        submit('POST', path`/admin/modules/${moduleId}/lessons`, lesson),
+      mandatoryExercises: (lessonId) => read(path`/admin/lessons/${lessonId}/mandatory-exercises`),
       saveMandatoryExercises: (lessonId, questionIds) =>
-        send('PUT', `/admin/lessons/${lessonId}/mandatory-exercises`, {
+        send('PUT', path`/admin/lessons/${lessonId}/mandatory-exercises`, {
           question_ids: questionIds,
         }),
-      panel: (path, signal) => call('json', path, { signal }),
-      auditLogs: (query) => read(`/admin/audit-logs?${query}`),
+      performance: (teacherId, signal) =>
+        call('json', `/admin/performance${query({ teacher_id: teacherId })}`, { signal }),
+      teachers: (signal) => call('json', '/admin/teachers', { signal }),
+      classes: (signal) => call('json', '/admin/classes', { signal }),
+      auditLogs: (search) => read(`/admin/audit-logs?${search}`),
       admissions: (signal) => call('json', '/admin/account-admissions', { signal }),
       reviewAdmission: (requestId, decision, note) =>
-        submit('POST', `/admin/account-admissions/${id(requestId)}/review`, {
+        submit('POST', path`/admin/account-admissions/${requestId}/review`, {
           decision,
           version: '1',
           note,

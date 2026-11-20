@@ -8,7 +8,6 @@ import type { Result } from './result';
 
 export type Answer = { selected_index: number; response_time_seconds?: number };
 export type PrivacyRequestScope = 'own' | 'all';
-export type AdminListing = 'teachers' | 'classes';
 
 export type LoginCredentials = { email: string; password: string; captcha_token?: string };
 
@@ -40,8 +39,9 @@ export interface CommunicationGateway {
 
 export interface PrivacyGateway {
   requests<T>(scope: PrivacyRequestScope, signal?: AbortSignal): Promise<Result<T>>;
-  /** Cria, cancela ou resolve um pedido; o caminho identifica a operação. */
-  submit(path: string, body?: object): Promise<Result<void>>;
+  createRequest(request: object): Promise<Result<void>>;
+  cancelRequest(requestId: string): Promise<Result<void>>;
+  resolveRequest(requestId: string, decision: object): Promise<Result<void>>;
   exportData(requestId: string): Promise<Result<Blob>>;
 }
 
@@ -96,8 +96,10 @@ export interface AdminGateway {
   createLesson(moduleId: string, lesson: object): Promise<Result<void>>;
   mandatoryExercises<T>(lessonId: string): Promise<Result<T>>;
   saveMandatoryExercises<T>(lessonId: string, questionIds: string[]): Promise<Result<T>>;
-  /** Leitura de um painel agregado; o caminho já traz os filtros escolhidos. */
-  panel<T>(path: string, signal?: AbortSignal): Promise<Result<T>>;
+  /** Desempenho agregado, opcionalmente restrito a um professor. */
+  performance<T>(teacherId?: string, signal?: AbortSignal): Promise<Result<T>>;
+  teachers<T>(signal?: AbortSignal): Promise<Result<T>>;
+  classes<T>(signal?: AbortSignal): Promise<Result<T>>;
   auditLogs<T>(query: string): Promise<Result<T>>;
   admissions<T>(signal?: AbortSignal): Promise<Result<T>>;
   reviewAdmission(requestId: string, decision: string, note: string): Promise<Result<void>>;

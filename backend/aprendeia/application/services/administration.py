@@ -138,13 +138,13 @@ class EditorialCatalogService:
         self._reserve_write(admin)
         if not self._admin.subject_exists(subject_id):
             raise NotFound(SUBJECT_NOT_FOUND)
-        return self._admin.create_module({"subject_id": subject_id, **values})
+        return self._admin.create_module({**values, "subject_id": subject_id})
 
     def create_lesson(self, admin: Row, module_id: str, values: Row) -> Row:
         self._reserve_write(admin)
         if not self._admin.module_exists(module_id):
             raise NotFound("Módulo não encontrado.")
-        return self._admin.create_lesson({"module_id": module_id, **values})
+        return self._admin.create_lesson({**values, "module_id": module_id})
 
     def update_lesson(self, admin: Row, lesson_id: str, values: Row) -> Row:
         """Edita ou despublica a aula sem apagar histórico do estudante."""

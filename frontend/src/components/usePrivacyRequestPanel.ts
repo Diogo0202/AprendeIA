@@ -1,6 +1,6 @@
 import { FormEvent, useCallback, useEffect, useId, useState } from 'react';
 import { gateways, isConnected } from '../application/gateways';
-import { failureMessage } from '../application/result';
+import { failureMessage, type Result } from '../application/result';
 import type { PrivacyRequest, PrivacyRequestKind } from '../domain/privacy';
 
 /** Estado e ações de RequestPanel; a tela só exibe o que este hook devolve. */
@@ -60,21 +60,17 @@ export function usePrivacyRequestPanel({ admin = false }: { admin?: boolean }) {
     return () => controller.abort();
   }, [load]);
 
-  async function mutate(path: string, body?: object) {
+  async function mutate(operation: () => Promise<Result<void>>, onSuccess?: () => void) {
     if (busy || !isConnected()) return;
     setBusy(true);
     setError('');
     setMessage('');
     try {
-      const submitted = await gateways().privacy.submit(path, body);
+      const submitted = await operation();
       if (!submitted.ok)
         throw new Error(failureMessage(submitted, 'Não foi possível concluir a operação.'));
       setMessage('Operação registrada.');
-      if (path === '/privacy/requests') {
-        setDetails('');
-        setCorrections({ full_name: '', grade: '', goal: '' });
-        setChangedFields([]);
-      }
+      onSuccess?.();
       await load();
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : 'Falha de conexão. Tente novamente.');
@@ -123,12 +119,26 @@ export function usePrivacyRequestPanel({ admin = false }: { admin?: boolean }) {
       setError('O nome precisa de pelo menos dois caracteres.');
       return;
     }
-    void mutate('/privacy/requests', {
+    const request = {
       kind,
       details,
       ...(kind === 'correction' && Object.keys(changed).length ? { corrections: changed } : {}),
-    });
+    };
+    void mutate(
+      () => gateways().privacy.createRequest(request),
+      () => {
+        setDetails('');
+        setCorrections({ full_name: '', grade: '', goal: '' });
+        setChangedFields([]);
+      },
+    );
   }
+
+  const cancel = (requestId: string) =>
+    void mutate(() => gateways().privacy.cancelRequest(requestId));
+
+  const resolve = (requestId: string, decision: object) =>
+    void mutate(() => gateways().privacy.resolveRequest(requestId, decision));
 
   return {
     requests,
@@ -148,7 +158,8 @@ export function usePrivacyRequestPanel({ admin = false }: { admin?: boolean }) {
     loaded,
     headingId,
     load,
-    mutate,
+    cancel,
+    resolve,
     download,
     submit,
   };

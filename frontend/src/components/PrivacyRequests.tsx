@@ -109,7 +109,8 @@ function RequestPanel(props: { admin?: boolean }) {
     loaded,
     headingId,
     load,
-    mutate,
+    cancel,
+    resolve,
     download,
     submit,
   } = usePrivacyRequestPanel(props);
@@ -241,9 +242,7 @@ function RequestPanel(props: { admin?: boolean }) {
                 type="button"
                 className="outline-button"
                 disabled={busy || loading}
-                onClick={() =>
-                  void mutate(`/privacy/requests/${encodeURIComponent(request.id)}/cancel`)
-                }
+                onClick={() => cancel(request.id)}
               >
                 Cancelar pedido
               </button>
@@ -270,12 +269,7 @@ function RequestPanel(props: { admin?: boolean }) {
                   key={request.id}
                   request={request}
                   disabled={busy || loading || !loaded}
-                  onResolve={(body) =>
-                    void mutate(
-                      `/admin/privacy-requests/${encodeURIComponent(request.id)}/resolve`,
-                      body,
-                    )
-                  }
+                  onResolve={(body) => resolve(request.id, body)}
                 />
               ))}
           </article>

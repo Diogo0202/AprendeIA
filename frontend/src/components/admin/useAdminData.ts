@@ -1,13 +1,20 @@
-import { useEffect, useState } from 'react';
-import { gateways, isConnected } from '../../application/gateways';
-import { failureMessage } from '../../application/result';
+import { useEffect, useRef, useState } from 'react';
+import { isConnected } from '../../application/gateways';
+import { failureMessage, type Result } from '../../application/result';
 
-/** Carrega uma rota do painel e mostra a mensagem segura do backend em caso de erro. */
-export function useAdminData<T>(path: string, initial: T) {
+type Loader<T> = (signal: AbortSignal) => Promise<Result<T>>;
+
+/**
+ * Carrega um painel e mostra a mensagem segura do backend em caso de erro.
+ * `key` muda quando os filtros mudam e dispara uma nova leitura.
+ */
+export function useAdminData<T>(key: string, load: Loader<T>, initial: T) {
   const [data, setData] = useState<T>(initial);
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(isConnected());
   const [version, setVersion] = useState(0);
+  const loader = useRef(load);
+  loader.current = load;
 
   useEffect(() => {
     if (!isConnected()) return;
@@ -15,7 +22,7 @@ export function useAdminData<T>(path: string, initial: T) {
     setLoading(true);
     void (async () => {
       try {
-        const loaded = await gateways().admin.panel<T>(path, controller.signal);
+        const loaded = await loader.current(controller.signal);
         if (!loaded.ok)
           throw new Error(failureMessage(loaded, 'Não foi possível carregar os dados.'));
         const body = loaded.data;
@@ -31,7 +38,7 @@ export function useAdminData<T>(path: string, initial: T) {
       }
     })();
     return () => controller.abort();
-  }, [path, version]);
+  }, [key, version]);
 
   return { data, error, loading, reload: () => setVersion((value) => value + 1) };
 }
